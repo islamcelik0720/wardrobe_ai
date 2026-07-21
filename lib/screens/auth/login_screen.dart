@@ -8,32 +8,36 @@ class LoginScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("WardrobeAI"), centerTitle: true),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.checkroom, size: 100),
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.checkroom, size: 100),
 
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-            const Text(
-              "WardrobeAI",
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-            ),
+              const Text(
+                "WardrobeAI",
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+              ),
 
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
 
-            const Text(
-              "Yapay Zekâ Destekli Kombin Asistanı",
-              style: TextStyle(fontSize: 18),
-            ),
+              const Text(
+                "Yapay Zekâ Destekli Kombin Asistanı",
+                style: TextStyle(fontSize: 18),
+              ),
 
-            PrimaryButton(text: "Giriş Yap", onPressed: () {}),
+              const SizedBox(height: 40),
 
-            const SizedBox(height: 15),
+              PrimaryButton(text: "Giriş Yap", onPressed: () {}),
 
-            PrimaryButton(text: "Kayıt Ol", onPressed: () {}),
-          ],
+              const SizedBox(height: 15),
+
+              PrimaryButton(text: "Kayıt Ol", onPressed: () {}),
+            ],
+          ),
         ),
       ),
     );
