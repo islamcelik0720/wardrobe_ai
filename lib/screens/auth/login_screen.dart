@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/primary_button.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -27,25 +28,11 @@ class LoginScreen extends StatelessWidget {
               style: TextStyle(fontSize: 18),
             ),
 
-            const SizedBox(height: 40),
-
-            SizedBox(
-              width: 220,
-              child: ElevatedButton(
-                onPressed: () {},
-                child: const Text("Giriş Yap"),
-              ),
-            ),
+            PrimaryButton(text: "Giriş Yap", onPressed: () {}),
 
             const SizedBox(height: 15),
 
-            SizedBox(
-              width: 220,
-              child: ElevatedButton(
-                onPressed: () {},
-                child: const Text("Kayıt Ol"),
-              ),
-            ),
+            PrimaryButton(text: "Kayıt Ol", onPressed: () {}),
           ],
         ),
       ),
