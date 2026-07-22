@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'register_screen.dart';
 import '../../widgets/primary_button.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -12,6 +13,7 @@ class LoginScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text("WardrobeAI"),
         centerTitle: true,
+        foregroundColor: Colors.white,
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -84,7 +86,9 @@ class LoginScreen extends StatelessWidget {
                           text: "Giriş Yap",
                           backgroundColor: Colors.white,
                           textColor: const Color(0xFF6A11CB),
-                          onPressed: () {},
+                          onPressed: () {
+                            // Şimdilik boş bırakıyoruz.
+                          },
                         ),
 
                         const SizedBox(height: 15),
@@ -94,7 +98,14 @@ class LoginScreen extends StatelessWidget {
                           backgroundColor: Colors.transparent,
                           textColor: Colors.white,
                           borderColor: Colors.white,
-                          onPressed: () {},
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const RegisterScreen(),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
