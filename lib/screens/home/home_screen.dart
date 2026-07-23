@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
 import '../auth/welcome_screen.dart';
+import '../wardrobe/add_clothing_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -71,6 +72,18 @@ class HomeScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF6A11CB),
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddClothingScreen()),
+          );
+        },
       ),
     );
   }

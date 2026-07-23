@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
-import 'screens/auth/welcome_screen.dart';
 import 'screens/auth/auth_wrapper.dart';
 
 Future<void> main() async {

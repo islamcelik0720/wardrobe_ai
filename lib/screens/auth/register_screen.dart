@@ -41,6 +41,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       await _authService.register(
+        fullName: fullNameController.text.trim(),
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
@@ -58,11 +59,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 12),
-              Text(
-                "Kayıt başarılı!",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  "Kayıt başarılı!",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -81,7 +84,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          content: Text(e.toString()),
+          content: Text(
+            e.toString(),
+            style: const TextStyle(color: Colors.white),
+          ),
         ),
       );
     } finally {

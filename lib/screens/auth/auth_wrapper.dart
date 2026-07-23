@@ -9,12 +9,24 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = AuthService().currentUser;
+    return StreamBuilder(
+      stream: AuthService().authStateChanges,
+      builder: (context, snapshot) {
+        // Firebase kontrol edilirken yükleniyor ekranı
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    if (user != null) {
-      return const HomeScreen();
-    }
+        // Kullanıcı giriş yaptıysa
+        if (snapshot.hasData) {
+          return const HomeScreen();
+        }
 
-    return const WelcomeScreen();
+        // Giriş yapılmadıysa
+        return const WelcomeScreen();
+      },
+    );
   }
 }
