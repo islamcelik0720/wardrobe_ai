@@ -3,33 +3,41 @@ import 'package:firebase_auth/firebase_auth.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Kayıt Ol
+  /// Kayıt Ol
   Future<UserCredential> register({
     required String email,
     required String password,
   }) async {
-    return await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    try {
+      return await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException {
+      rethrow;
+    }
   }
 
-  // Giriş Yap
+  /// Giriş Yap
   Future<UserCredential> login({
     required String email,
     required String password,
   }) async {
-    return await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    try {
+      return await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException {
+      rethrow;
+    }
   }
 
-  // Çıkış Yap
+  /// Çıkış Yap
   Future<void> logout() async {
     await _auth.signOut();
   }
 
-  // Aktif kullanıcı
+  /// Aktif kullanıcı
   User? get currentUser => _auth.currentUser;
 }

@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
-import 'screens/auth/login_screen.dart';
+import 'screens/auth/welcome_screen.dart';
+import 'screens/auth/auth_wrapper.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,7 +23,7 @@ class WardrobeAIApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'WardrobeAI',
       theme: AppTheme.lightTheme,
-      home: const LoginScreen(),
+      home: const AuthWrapper(),
     );
   }
 }
