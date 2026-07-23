@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/clothing_item.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -13,5 +14,9 @@ class FirestoreService {
       'email': email,
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> addClothing(ClothingItem clothingItem) async {
+    await _firestore.collection("clothes").add(clothingItem.toMap());
   }
 }
