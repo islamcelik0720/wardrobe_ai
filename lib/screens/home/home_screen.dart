@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../wardrobe/wardrobe_statistics_screen.dart';
 import '../../models/clothing_item.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
@@ -275,6 +276,20 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('WardrobeAI'),
         centerTitle: true,
         automaticallyImplyLeading: false,
+        actions: [
+          IconButton(
+            tooltip: 'Gardırop İstatistikleri',
+            icon: const Icon(Icons.bar_chart_rounded),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const WardrobeStatisticsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: user == null
           ? const Center(child: Text('Kullanıcı oturumu bulunamadı.'))

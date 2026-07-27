@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'add_clothing_screen.dart';
 import '../../models/clothing_item.dart';
 import '../../services/firestore_service.dart';
+import '../../services/outfit_suggestion_service.dart';
 
 class ClothingDetailScreen extends StatefulWidget {
   final ClothingItem clothing;
@@ -16,13 +17,25 @@ class ClothingDetailScreen extends StatefulWidget {
 class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
 
+  final OutfitSuggestionService _outfitSuggestionService =
+      OutfitSuggestionService();
+
   bool isFavorite = false;
+  int _timesUsed = 0;
   bool _isFavoriteUpdating = false;
+  bool _isUsageUpdating = false;
+  String _outfitSuggestion = "";
+
   @override
   void initState() {
     super.initState();
 
     isFavorite = widget.clothing.favorite;
+    _timesUsed = widget.clothing.timesUsed;
+
+    _outfitSuggestion = _outfitSuggestionService.generateSuggestion(
+      widget.clothing,
+    );
   }
 
   Future<void> _toggleFavorite(bool value) async {
@@ -110,6 +123,117 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
         });
       }
     }
+  }
+
+  Future<void> _incrementUsage() async {
+    if (_isUsageUpdating) return;
+
+    setState(() {
+      _isUsageUpdating = true;
+    });
+
+    try {
+      await _firestoreService.incrementUsage(widget.clothing.id);
+
+      if (!mounted) return;
+
+      setState(() {
+        _timesUsed++;
+      });
+
+      await HapticFeedback.lightImpact();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Kullanım sayısı artırıldı.",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.error, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Kullanım sayısı artırılamadı.",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUsageUpdating = false;
+        });
+      }
+    }
+  }
+
+  void _generateNewSuggestion() {
+    HapticFeedback.selectionClick();
+
+    setState(() {
+      _outfitSuggestion = _outfitSuggestionService.generateSuggestion(
+        widget.clothing,
+      );
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF6A11CB),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: const Row(
+          children: [
+            Icon(Icons.auto_awesome, color: Colors.white),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                "Yeni kombin önerisi oluşturuldu.",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   int _calculateStyleScore() {
@@ -476,7 +600,173 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
             ),
 
             const SizedBox(height: 16),
+
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.repeat,
+                          color: Color(0xFF6A11CB),
+                          size: 30,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Kullanım Sayısı",
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                "$_timesUsed kez kullanıldı",
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: _isUsageUpdating ? null : _incrementUsage,
+                        icon: _isUsageUpdating
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.checkroom),
+                        label: Text(
+                          _isUsageUpdating ? "Kaydediliyor..." : "Bugün Giydim",
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
             const SizedBox(height: 16),
+
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: const Color(0xFF6A11CB).withValues(alpha: 0.25),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.auto_awesome,
+                        color: Color(0xFF6A11CB),
+                        size: 28,
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "Kombin Önerisi",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  Text(
+                    _outfitSuggestion,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.7,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6A11CB).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: Color(0xFF6A11CB),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "Bu öneri şimdilik kategori, renk ve mevsim "
+                            "bilgilerine göre yerel olarak oluşturuluyor.",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6A11CB),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: _generateNewSuggestion,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text(
+                        "Yeni Öneri Oluştur",
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
             Card(
               elevation: 4,

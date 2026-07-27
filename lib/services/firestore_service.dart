@@ -50,6 +50,12 @@ class FirestoreService {
     });
   }
 
+  Future<void> incrementUsage(String documentId) async {
+    await _firestore.collection("clothes").doc(documentId).update({
+      "timesUsed": FieldValue.increment(1),
+    });
+  }
+
   // Kıyafeti Sil
   Future<void> deleteClothing(String documentId) async {
     await _firestore.collection("clothes").doc(documentId).delete();
