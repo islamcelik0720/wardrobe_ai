@@ -8,7 +8,9 @@ import '../../services/storage_service.dart';
 import 'package:flutter/material.dart';
 
 class AddClothingScreen extends StatefulWidget {
-  const AddClothingScreen({super.key});
+  final ClothingItem? clothing;
+
+  const AddClothingScreen({super.key, this.clothing});
 
   @override
   State<AddClothingScreen> createState() => _AddClothingScreenState();
@@ -29,6 +31,7 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
   String? selectedSeason;
 
   bool isFavorite = false;
+  bool get isEditMode => widget.clothing != null;
 
   final TextEditingController brandController = TextEditingController();
   final TextEditingController notesController = TextEditingController();
@@ -53,6 +56,68 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
         const SnackBar(content: Text("Lütfen önce bir fotoğraf seçiniz.")),
       );
       return;
+    }
+    Future<void> _saveClothing() async {
+      if (selectedCategory == null ||
+          selectedColor == null ||
+          selectedFabric == null ||
+          selectedSeason == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Lütfen tüm zorunlu alanları doldurun."),
+          ),
+        );
+        return;
+      }
+
+      final clothing = ClothingItem(
+        id: isEditMode ? widget.clothing!.id : "",
+        uid: FirebaseAuth.instance.currentUser!.uid,
+        imageUrl: widget.clothing?.imageUrl ?? "",
+        category: selectedCategory!,
+        color: selectedColor!,
+        fabric: selectedFabric!,
+        season: selectedSeason!,
+        favorite: isFavorite,
+        brand: brandController.text.trim(),
+        notes: notesController.text.trim(),
+        timesUsed: isEditMode ? widget.clothing!.timesUsed : 0,
+        createdAt: isEditMode ? widget.clothing!.createdAt : DateTime.now(),
+      );
+
+      try {
+        if (isEditMode) {
+          await _firestoreService.updateClothing(clothing);
+
+          if (!mounted) return;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.green,
+              content: Text("Kıyafet başarıyla güncellendi."),
+            ),
+          );
+        } else {
+          await _firestoreService.addClothing(clothing);
+
+          if (!mounted) return;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.green,
+              content: Text("Kıyafet başarıyla kaydedildi."),
+            ),
+          );
+        }
+
+        Navigator.pop(context);
+      } catch (e) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: Colors.red, content: Text(e.toString())),
+        );
+      }
     }
 
     try {
@@ -92,9 +157,9 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
 
     try {
       final clothingItem = ClothingItem(
-        id: "",
+        id: isEditMode ? widget.clothing!.id : "",
         uid: FirebaseAuth.instance.currentUser!.uid,
-        imageUrl: "",
+        imageUrl: isEditMode ? widget.clothing!.imageUrl : "",
         category: selectedCategory!,
         color: selectedColor!,
         fabric: selectedFabric!,
@@ -102,11 +167,15 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
         favorite: isFavorite,
         brand: brandController.text.trim(),
         notes: notesController.text.trim(),
-        timesUsed: 0,
-        createdAt: DateTime.now(),
+        timesUsed: isEditMode ? widget.clothing!.timesUsed : 0,
+        createdAt: isEditMode ? widget.clothing!.createdAt : DateTime.now(),
       );
 
-      await _firestoreService.addClothing(clothingItem);
+      if (isEditMode) {
+        await _firestoreService.updateClothing(clothingItem);
+      } else {
+        await _firestoreService.addClothing(clothingItem);
+      }
 
       if (!mounted) return;
 
@@ -117,21 +186,27 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          content: const Row(
+          content: Row(
             children: [
-              Icon(Icons.check_circle, color: Colors.white),
-              SizedBox(width: 12),
-              Text(
-                "Kıyafet başarıyla kaydedildi.",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isEditMode
+                      ? "Kıyafet başarıyla güncellendi."
+                      : "Kıyafet başarıyla kaydedildi.",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
         ),
       );
+
+      Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
 
@@ -163,16 +238,29 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
   }
 
   @override
-  void dispose() {
-    brandController.dispose();
-    notesController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+
+    if (isEditMode) {
+      selectedCategory = widget.clothing!.category;
+      selectedColor = widget.clothing!.color;
+      selectedFabric = widget.clothing!.fabric;
+      selectedSeason = widget.clothing!.season;
+
+      isFavorite = widget.clothing!.favorite;
+
+      brandController.text = widget.clothing!.brand ?? "";
+      notesController.text = widget.clothing!.notes ?? "";
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Kıyafet Ekle"), centerTitle: true),
+      appBar: AppBar(
+        title: Text(isEditMode ? "Kıyafeti Düzenle" : "Kıyafet Ekle"),
+        centerTitle: true,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -220,6 +308,7 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
             const SizedBox(height: 25),
 
             DropdownButtonFormField<String>(
+              value: selectedCategory,
               decoration: const InputDecoration(
                 labelText: "Kategori",
                 border: OutlineInputBorder(),
@@ -241,6 +330,7 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
             const SizedBox(height: 20),
 
             DropdownButtonFormField<String>(
+              value: selectedColor,
               decoration: const InputDecoration(
                 labelText: "Renk",
                 border: OutlineInputBorder(),
@@ -261,6 +351,7 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
             const SizedBox(height: 20),
 
             DropdownButtonFormField<String>(
+              value: selectedFabric,
               decoration: const InputDecoration(
                 labelText: "Kumaş",
                 border: OutlineInputBorder(),
@@ -281,6 +372,7 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
             const SizedBox(height: 20),
 
             DropdownButtonFormField<String>(
+              value: selectedSeason,
               decoration: const InputDecoration(
                 labelText: "Mevsim",
                 border: OutlineInputBorder(),
