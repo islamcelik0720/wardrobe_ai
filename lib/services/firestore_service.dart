@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../models/clothing_item.dart';
+import '../models/outfit_plan.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -59,5 +61,41 @@ class FirestoreService {
   // Kıyafeti Sil
   Future<void> deleteClothing(String documentId) async {
     await _firestore.collection("clothes").doc(documentId).delete();
+  }
+
+  Future<void> saveOutfitPlan(OutfitPlan plan) async {
+    final querySnapshot = await _firestore
+        .collection("outfitPlans")
+        .where("uid", isEqualTo: plan.uid)
+        .where("day", isEqualTo: plan.day)
+        .limit(1)
+        .get();
+
+    if (querySnapshot.docs.isEmpty) {
+      await _firestore.collection("outfitPlans").add(plan.toMap());
+    } else {
+      final documentId = querySnapshot.docs.first.id;
+
+      await _firestore.collection("outfitPlans").doc(documentId).update({
+        "clothingIds": plan.clothingIds,
+        "updatedAt": Timestamp.fromDate(plan.updatedAt),
+      });
+    }
+  }
+
+  Stream<List<OutfitPlan>> getOutfitPlans(String uid) {
+    return _firestore
+        .collection("outfitPlans")
+        .where("uid", isEqualTo: uid)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.map((doc) {
+            return OutfitPlan.fromMap(doc.data(), doc.id);
+          }).toList();
+        });
+  }
+
+  Future<void> deleteOutfitPlan(String documentId) async {
+    await _firestore.collection("outfitPlans").doc(documentId).delete();
   }
 }

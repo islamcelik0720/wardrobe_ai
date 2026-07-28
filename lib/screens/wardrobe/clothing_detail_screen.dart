@@ -472,7 +472,9 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
                     child: Icon(
                       isFavorite ? Icons.star : Icons.star_border,
                       key: ValueKey(isFavorite),
-                      color: isFavorite ? Colors.amber.shade700 : Colors.grey,
+                      color: isFavorite
+                          ? Colors.amber.shade700
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                       size: 34,
                     ),
                   ),
@@ -632,7 +634,11 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
                               const SizedBox(height: 4),
                               Text(
                                 "$_timesUsed kez kullanıldı",
-                                style: const TextStyle(color: Colors.grey),
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ],
                           ),
@@ -677,7 +683,9 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Theme.of(
+                      context,
+                    ).shadowColor.withValues(alpha: 0.12),
                     blurRadius: 12,
                     offset: const Offset(0, 6),
                   ),
@@ -796,7 +804,7 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
         elevation: 4,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         child: ListTile(
-          leading: Icon(icon, color: const Color(0xFF6A11CB)),
+          leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
           title: Text(title),
           subtitle: Text(
             value,

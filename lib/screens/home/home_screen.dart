@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../wardrobe/add_clothing_screen.dart';
 import '../wardrobe/clothing_detail_screen.dart';
+import '../planner/outfit_planner_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -99,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: 44,
                         height: 5,
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
+                          color: Theme.of(context).dividerColor,
                           borderRadius: BorderRadius.circular(20),
                         ),
                       ),
@@ -278,6 +279,16 @@ class _HomeScreenState extends State<HomeScreen> {
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
+            tooltip: "Kombin Planlayıcı",
+            icon: const Icon(Icons.calendar_month_rounded),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const OutfitPlannerScreen()),
+              );
+            },
+          ),
+          IconButton(
             tooltip: 'Gardırop İstatistikleri',
             icon: const Icon(Icons.bar_chart_rounded),
             onPressed: () {
@@ -323,7 +334,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             )
                           : null,
                       filled: true,
-                      fillColor: Colors.grey.shade100,
+                      fillColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -451,15 +464,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                           width: 70,
                                           height: 70,
                                           decoration: BoxDecoration(
-                                            color: Colors.deepPurple.shade50,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primaryContainer,
                                             borderRadius: BorderRadius.circular(
                                               16,
                                             ),
                                           ),
-                                          child: const Icon(
+                                          child: Icon(
                                             Icons.checkroom,
                                             size: 38,
-                                            color: Color(0xFF6A11CB),
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
                                           ),
                                         ),
                                         const SizedBox(width: 18),

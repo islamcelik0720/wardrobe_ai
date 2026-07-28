@@ -22,6 +22,8 @@ class WardrobeAIApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'WardrobeAI',
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       home: const AuthWrapper(),
     );
   }
