@@ -1,7 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../services/auth_service.dart';
-import '../home/home_screen.dart';
+import '../main/main_navigation_screen.dart';
 import 'welcome_screen.dart';
 
 class AuthWrapper extends StatelessWidget {
@@ -9,22 +9,19 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder(
-      stream: AuthService().authStateChanges,
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // Firebase kontrol edilirken yükleniyor ekranı
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // Kullanıcı giriş yaptıysa
         if (snapshot.hasData) {
-          return const HomeScreen();
+          return const MainNavigationScreen();
         }
 
-        // Giriş yapılmadıysa
         return const WelcomeScreen();
       },
     );

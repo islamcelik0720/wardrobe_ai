@@ -19,6 +19,12 @@ class FirestoreService {
     });
   }
 
+  Future<Map<String, dynamic>?> getUserData(String uid) async {
+    final document = await _firestore.collection("users").doc(uid).get();
+
+    return document.data();
+  }
+
   // Yeni Kıyafet Ekle
   Future<void> addClothing(ClothingItem clothingItem) async {
     await _firestore.collection("clothes").add(clothingItem.toMap());

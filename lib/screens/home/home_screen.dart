@@ -7,6 +7,7 @@ import '../../services/firestore_service.dart';
 import '../wardrobe/add_clothing_screen.dart';
 import '../wardrobe/clothing_detail_screen.dart';
 import '../planner/outfit_planner_screen.dart';
+import '../profile/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -297,6 +298,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 MaterialPageRoute(
                   builder: (_) => const WardrobeStatisticsScreen(),
                 ),
+              );
+            },
+          ),
+          IconButton(
+            tooltip: "Profil & Ayarlar",
+            icon: const Icon(Icons.person_outline),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
               );
             },
           ),
