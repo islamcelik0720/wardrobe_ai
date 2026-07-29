@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../wardrobe/wardrobe_statistics_screen.dart';
 import '../../models/clothing_item.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../wardrobe/add_clothing_screen.dart';
 import '../wardrobe/clothing_detail_screen.dart';
-import '../planner/outfit_planner_screen.dart';
-import '../profile/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -275,43 +272,51 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('WardrobeAI'),
-        centerTitle: true,
         automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            tooltip: "Kombin Planlayıcı",
-            icon: const Icon(Icons.calendar_month_rounded),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const OutfitPlannerScreen()),
+        centerTitle: false,
+        toolbarHeight: 95,
+        titleSpacing: 20,
+        title: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: FutureBuilder<Map<String, dynamic>?>(
+            future: user == null
+                ? Future.value(null)
+                : _firestoreService.getUserData(user.uid),
+            builder: (context, snapshot) {
+              final userData = snapshot.data;
+
+              final String fullName =
+                  userData?["fullName"]?.toString().trim().isNotEmpty == true
+                  ? userData!["fullName"].toString()
+                  : "WardrobeAI Kullanıcısı";
+
+              final String firstName = fullName.split(" ").first;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "👋 Hoş geldin,",
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    firstName,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               );
             },
           ),
-          IconButton(
-            tooltip: 'Gardırop İstatistikleri',
-            icon: const Icon(Icons.bar_chart_rounded),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const WardrobeStatisticsScreen(),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            tooltip: "Profil & Ayarlar",
-            icon: const Icon(Icons.person_outline),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ProfileScreen()),
-              );
-            },
-          ),
-        ],
+        ),
       ),
       body: user == null
           ? const Center(child: Text('Kullanıcı oturumu bulunamadı.'))

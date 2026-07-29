@@ -4,6 +4,7 @@ import 'add_clothing_screen.dart';
 import '../../models/clothing_item.dart';
 import '../../services/firestore_service.dart';
 import '../../services/outfit_suggestion_service.dart';
+import '../../services/gemini_service.dart';
 
 class ClothingDetailScreen extends StatefulWidget {
   final ClothingItem clothing;
@@ -20,11 +21,17 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
   final OutfitSuggestionService _outfitSuggestionService =
       OutfitSuggestionService();
 
+  final GeminiService _geminiService = GeminiService();
+
   bool isFavorite = false;
-  int _timesUsed = 0;
   bool _isFavoriteUpdating = false;
   bool _isUsageUpdating = false;
+
+  int _timesUsed = 0;
+
   String _outfitSuggestion = "";
+  String? _aiSuggestion;
+  bool _isAiSuggestionLoading = false;
 
   @override
   void initState() {
@@ -264,6 +271,86 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
     }
 
     return score.clamp(0, 100);
+  }
+
+  Future<void> _generateAiSuggestion() async {
+    if (_isAiSuggestionLoading) return;
+
+    setState(() {
+      _isAiSuggestionLoading = true;
+    });
+
+    HapticFeedback.selectionClick();
+
+    try {
+      final suggestion = await _geminiService.generateOutfitSuggestion(
+        widget.clothing,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _aiSuggestion = suggestion;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF6A11CB),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "AI kombin önerisi hazırlandı.",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "AI önerisi oluşturulamadı.\n$e",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAiSuggestionLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -602,6 +689,118 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
             ),
 
             const SizedBox(height: 16),
+
+            const SizedBox(height: 16),
+
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 350),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6A11CB).withValues(alpha: 0.25),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.auto_awesome, color: Colors.white, size: 28),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "Gemini AI Önerisi",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  if (_aiSuggestion == null)
+                    const Text(
+                      "Bu kıyafete özel gerçek yapay zekâ önerisi oluşturmak için "
+                      "aşağıdaki butona bas.",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.5,
+                      ),
+                    )
+                  else
+                    Text(
+                      _aiSuggestion!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.7,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+
+                  const SizedBox(height: 18),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF6A11CB),
+                      ),
+                      onPressed: _isAiSuggestionLoading
+                          ? null
+                          : _generateAiSuggestion,
+                      icon: _isAiSuggestionLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Color(0xFF6A11CB),
+                              ),
+                            )
+                          : const Icon(Icons.auto_awesome),
+                      label: Text(
+                        _isAiSuggestionLoading
+                            ? "AI düşünüyor..."
+                            : _aiSuggestion == null
+                            ? "AI Önerisi Oluştur"
+                            : "Yeni AI Önerisi Oluştur",
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  const Text(
+                    "Öneri Gemini tarafından kıyafetin kategori, renk, kumaş, "
+                    "mevsim, marka ve not bilgilerine göre oluşturulur.",
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
             Card(
               elevation: 4,

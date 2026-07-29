@@ -35,25 +35,62 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _changePage,
-        destinations: const [
+
+        height: 72,
+        elevation: 8,
+
+        backgroundColor: Theme.of(context).colorScheme.surface,
+
+        indicatorColor: Theme.of(context).colorScheme.primaryContainer,
+
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
+            icon: Icon(
+              Icons.home_outlined,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            selectedIcon: Icon(
+              Icons.home,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             label: "Ana Sayfa",
           ),
+
           NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
+            icon: Icon(
+              Icons.calendar_month_outlined,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            selectedIcon: Icon(
+              Icons.calendar_month,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             label: "Planlayıcı",
           ),
+
           NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
+            icon: Icon(
+              Icons.bar_chart_outlined,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            selectedIcon: Icon(
+              Icons.bar_chart,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             label: "İstatistik",
           ),
+
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: Icon(
+              Icons.person_outline,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            selectedIcon: Icon(
+              Icons.person,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             label: "Profil",
           ),
         ],

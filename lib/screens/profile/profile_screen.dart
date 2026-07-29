@@ -6,6 +6,11 @@ import '../../models/outfit_plan.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../auth/welcome_screen.dart';
+import '../../models/achievement.dart';
+import '../../services/achievement_service.dart';
+import '../../core/settings/notification_controller.dart';
+import '../../services/local_notification_service.dart';
+import '../../services/gemini_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -88,6 +93,88 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _testGemini(BuildContext context) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 18),
+              Expanded(child: Text("Gemini yanıtı hazırlanıyor...")),
+            ],
+          ),
+        );
+      },
+    );
+
+    try {
+      final response = await GeminiService().generateTestResponse();
+
+      if (!context.mounted) return;
+
+      Navigator.pop(context);
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.auto_awesome, color: Color(0xFF6A11CB)),
+                SizedBox(width: 10),
+                Expanded(child: Text("Gemini Yanıtı")),
+              ],
+            ),
+            content: Text(
+              response,
+              style: const TextStyle(fontSize: 16, height: 1.5),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text("Kapat"),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Gemini bağlantısı başarısız:\n$e",
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _logout(BuildContext context) async {
     final bool? shouldLogout = await showDialog<bool>(
       context: context,
@@ -143,6 +230,7 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
     final firestoreService = FirestoreService();
+    final achievementService = AchievementService();
 
     return Scaffold(
       appBar: AppBar(title: const Text("Profil & Ayarlar"), centerTitle: true),
@@ -313,37 +401,77 @@ class ProfileScreen extends StatelessWidget {
                             final plans = plansSnapshot.data ?? [];
                             final int plannedOutfits = plans.length;
 
-                            return Row(
+                            final achievements = achievementService
+                                .generateAchievements(
+                                  clothes: clothes,
+                                  outfitPlans: plans,
+                                );
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Expanded(
-                                  child: _buildStatisticCard(
-                                    context: context,
-                                    icon: Icons.checkroom,
-                                    value: "$totalClothes",
-                                    title: "Kıyafet",
-                                    iconColor: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                  ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildStatisticCard(
+                                        context: context,
+                                        icon: Icons.checkroom,
+                                        value: "$totalClothes",
+                                        title: "Kıyafet",
+                                        iconColor: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _buildStatisticCard(
+                                        context: context,
+                                        icon: Icons.star,
+                                        value: "$favoriteCount",
+                                        title: "Favori",
+                                        iconColor: Colors.amber,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _buildStatisticCard(
+                                        context: context,
+                                        icon: Icons.calendar_month,
+                                        value: "$plannedOutfits",
+                                        title: "Plan",
+                                        iconColor: Colors.green,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildStatisticCard(
-                                    context: context,
-                                    icon: Icons.star,
-                                    value: "$favoriteCount",
-                                    title: "Favori",
-                                    iconColor: Colors.amber,
-                                  ),
+
+                                const SizedBox(height: 28),
+
+                                const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.emoji_events,
+                                      color: Colors.amber,
+                                      size: 27,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      "Başarımlar",
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildStatisticCard(
+
+                                const SizedBox(height: 14),
+
+                                ...achievements.map(
+                                  (achievement) => _buildAchievementCard(
                                     context: context,
-                                    icon: Icons.calendar_month,
-                                    value: "$plannedOutfits",
-                                    title: "Plan",
-                                    iconColor: Colors.green,
+                                    achievement: achievement,
                                   ),
                                 ),
                               ],
@@ -401,13 +529,89 @@ class ProfileScreen extends StatelessWidget {
                     ),
 
                     // Bildirim ayarı şimdilik pasif
+                    AnimatedBuilder(
+                      animation: notificationController,
+                      builder: (context, child) {
+                        final enabled =
+                            notificationController.notificationsEnabled;
+
+                        return _buildSettingsCard(
+                          context: context,
+                          icon: enabled
+                              ? Icons.notifications_active
+                              : Icons.notifications_outlined,
+                          title: "Bildirimler",
+                          subtitle: enabled
+                              ? "Kombin hatırlatıcıları açık"
+                              : "Kombin hatırlatıcıları kapalı",
+                          trailing: Switch(
+                            value: enabled,
+                            onChanged: (value) async {
+                              await notificationController
+                                  .setNotificationsEnabled(value);
+
+                              if (value) {
+                                final granted = await LocalNotificationService
+                                    .instance
+                                    .requestPermission();
+
+                                if (granted) {
+                                  await LocalNotificationService.instance
+                                      .showTestNotification();
+                                }
+                              }
+
+                              if (!context.mounted) return;
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  backgroundColor: value
+                                      ? Colors.green.shade600
+                                      : Colors.grey.shade700,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  content: Row(
+                                    children: [
+                                      Icon(
+                                        value
+                                            ? Icons.notifications_active
+                                            : Icons.notifications_off,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          value
+                                              ? "Kombin hatırlatıcıları açıldı."
+                                              : "Kombin hatırlatıcıları kapatıldı.",
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          onTap: null,
+                        );
+                      },
+                    ),
+
                     _buildSettingsCard(
                       context: context,
-                      icon: Icons.notifications_outlined,
-                      title: "Bildirimler",
-                      subtitle: "Yakında kullanıma sunulacak",
-                      trailing: const Switch(value: false, onChanged: null),
-                      onTap: null,
+                      icon: Icons.auto_awesome,
+                      title: "Gemini AI Testi",
+                      subtitle: "Yapay zekâ bağlantısını kontrol et",
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        _testGemini(context);
+                      },
                     ),
 
                     _buildSettingsCard(
@@ -445,6 +649,136 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildAchievementCard({
+    required BuildContext context,
+    required Achievement achievement,
+  }) {
+    final Color achievementColor = achievement.isUnlocked
+        ? Colors.amber.shade700
+        : Theme.of(context).colorScheme.onSurfaceVariant;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 350),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: achievement.isUnlocked
+              ? Colors.amber.withValues(alpha: 0.10)
+              : Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: achievement.isUnlocked
+                ? Colors.amber.shade400
+                : Theme.of(context).dividerColor,
+            width: achievement.isUnlocked ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: achievementColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(
+                    achievement.icon,
+                    color: achievementColor,
+                    size: 29,
+                  ),
+                ),
+
+                const SizedBox(width: 14),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        achievement.title,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        achievement.description,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                Icon(
+                  achievement.isUnlocked
+                      ? Icons.check_circle
+                      : Icons.lock_outline,
+                  color: achievement.isUnlocked
+                      ? Colors.green
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: achievement.progress),
+                duration: const Duration(milliseconds: 700),
+                curve: Curves.easeOut,
+                builder: (context, value, child) {
+                  return LinearProgressIndicator(
+                    value: value,
+                    minHeight: 9,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      achievement.isUnlocked
+                          ? Colors.amber.shade700
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  achievement.isUnlocked ? "Tamamlandı" : "Devam ediyor",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: achievement.isUnlocked
+                        ? Colors.green
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Text(
+                  "${achievement.currentValue.clamp(0, achievement.targetValue)}"
+                  " / ${achievement.targetValue}",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 

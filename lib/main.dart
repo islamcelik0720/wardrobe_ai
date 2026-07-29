@@ -5,13 +5,22 @@ import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'screens/auth/auth_wrapper.dart';
+import 'core/settings/notification_controller.dart';
+import 'services/local_notification_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await dotenv.load(fileName: ".env");
+
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   await themeController.loadThemeMode();
+
+  await notificationController.loadNotificationSetting();
+
+  await LocalNotificationService.instance.initialize();
 
   runApp(const WardrobeAIApp());
 }
