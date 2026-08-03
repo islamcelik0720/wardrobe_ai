@@ -5,6 +5,12 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../wardrobe/add_clothing_screen.dart';
 import '../wardrobe/clothing_detail_screen.dart';
+import '../../services/gemini_service.dart';
+import '../../widgets/ai_wardrobe_card.dart';
+import 'dart:async';
+import '../../widgets/ai_outfit_result_sheet.dart';
+import '../../models/ai_outfit_result.dart';
+import '../../models/outfit_plan.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,6 +22,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final TextEditingController _searchController = TextEditingController();
+  final GeminiService _geminiService = GeminiService();
+
+  bool _isWardrobeAiLoading = false;
 
   String _searchQuery = '';
 
@@ -266,6 +275,540 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String _getFriendlyAiErrorMessage(Object error) {
+    final message = error.toString().toLowerCase();
+
+    if (error is TimeoutException ||
+        message.contains('timeout') ||
+        message.contains('zamanında yanıt vermedi')) {
+      return "AI yanıtı beklenenden uzun sürdü. "
+          "İnternet bağlantını kontrol edip tekrar dene.";
+    }
+
+    if (message.contains('quota') ||
+        message.contains('rate limit') ||
+        message.contains('resource_exhausted') ||
+        message.contains('429')) {
+      return "Ücretsiz AI kullanım sınırına ulaşıldı. "
+          "Bir süre bekledikten sonra tekrar deneyebilirsin.";
+    }
+
+    if (message.contains('socketexception') ||
+        message.contains('failed host lookup') ||
+        message.contains('network') ||
+        message.contains('connection')) {
+      return "İnternet bağlantısı kurulamadı. "
+          "Bağlantını kontrol edip tekrar dene.";
+    }
+
+    if (message.contains('api key') ||
+        message.contains('unauthorized') ||
+        message.contains('permission') ||
+        message.contains('401') ||
+        message.contains('403')) {
+      return "AI servisine erişim sağlanamadı. "
+          "API anahtarı veya servis ayarları kontrol edilmeli.";
+    }
+
+    if (message.contains('404') ||
+        message.contains('model') && message.contains('not found')) {
+      return "Kullanılan AI modeli şu anda erişilebilir değil.";
+    }
+
+    return "AI kombini şu anda oluşturulamadı. "
+        "Lütfen kısa bir süre sonra tekrar dene.";
+  }
+
+  Future<String?> _selectOutfitOccasion() async {
+    const occasions = ["Günlük", "Okul", "İş", "Spor", "Şık / Davet"];
+
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.auto_awesome,
+                      color: Color(0xFF6A11CB),
+                      size: 28,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Kombin Amacını Seç",
+                        style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  "Gemini seçtiğin ortama uygun parçaları belirleyecek.",
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                ...occasions.map((occasion) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      tileColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      leading: Icon(
+                        _getOccasionIcon(occasion),
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      title: Text(
+                        occasion,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(sheetContext, occasion);
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  IconData _getOccasionIcon(String occasion) {
+    switch (occasion) {
+      case "Okul":
+        return Icons.school_outlined;
+      case "İş":
+        return Icons.work_outline;
+      case "Spor":
+        return Icons.fitness_center;
+      case "Şık / Davet":
+        return Icons.celebration_outlined;
+      case "Günlük":
+      default:
+        return Icons.wb_sunny_outlined;
+    }
+  }
+
+  Future<void> _generateWardrobeOutfit(List<ClothingItem> clothes) async {
+    if (_isWardrobeAiLoading) return;
+
+    if (clothes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Kombin oluşturmak için önce kıyafet eklemelisin.",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
+
+    final String? selectedOccasion = await _selectOutfitOccasion();
+
+    if (selectedOccasion == null) {
+      return;
+    }
+
+    setState(() {
+      _isWardrobeAiLoading = true;
+    });
+
+    try {
+      final AiOutfitResult result = await _geminiService
+          .generateStructuredWardrobeOutfit(
+            clothes,
+            occasion: selectedOccasion,
+          );
+
+      final List<ClothingItem> selectedClothes = clothes.where((item) {
+        return result.selectedClothingIds.contains(item.id);
+      }).toList();
+
+      if (!mounted) return;
+
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: false,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        builder: (sheetContext) {
+          return AiOutfitResultSheet(
+            suggestion: result.suggestion,
+            occasion: selectedOccasion,
+            selectedClothes: selectedClothes,
+            onAddToPlanner: () {
+              Navigator.pop(sheetContext);
+
+              Future.microtask(() {
+                _addAiOutfitToPlanner(selectedClothes);
+              });
+            },
+
+            onRegenerate: () {
+              Navigator.pop(sheetContext);
+
+              Future.microtask(() {
+                _generateWardrobeOutfit(clothes);
+              });
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 7),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "AI kombini oluşturulamadı.\n$e",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isWardrobeAiLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _addAiOutfitToPlanner(List<ClothingItem> selectedClothes) async {
+    if (selectedClothes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.orange.shade700,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Planlayıcıya aktarılabilecek kıyafet bulunamadı.",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    const days = [
+      "Pazartesi",
+      "Salı",
+      "Çarşamba",
+      "Perşembe",
+      "Cuma",
+      "Cumartesi",
+      "Pazar",
+    ];
+
+    final String? selectedDay = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 46,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).dividerColor,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_month_rounded,
+                      color: Color(0xFF6A11CB),
+                      size: 28,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Kombin Gününü Seç",
+                        style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  "${selectedClothes.length} kıyafet seçilen güne kaydedilecek.",
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                ...days.map((day) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      tileColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      leading: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.calendar_today_rounded,
+                          color: Theme.of(context).colorScheme.primary,
+                          size: 21,
+                        ),
+                      ),
+                      title: Text(
+                        day,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(sheetContext, day);
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedDay == null || !mounted) return;
+
+    final user = AuthService().currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Kullanıcı oturumu bulunamadı.")),
+      );
+      return;
+    }
+
+    try {
+      final now = DateTime.now();
+
+      final plan = OutfitPlan(
+        id: "",
+        uid: user.uid,
+        day: selectedDay,
+        clothingIds: selectedClothes.map((item) => item.id).toList(),
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await _firestoreService.saveOutfitPlan(plan);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "$selectedDay kombini başarıyla planlayıcıya kaydedildi.",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "AI kombini planlayıcıya kaydedilemedi.",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showAiSnackBar({
+    required String message,
+    required Color backgroundColor,
+    required IconData icon,
+    Duration duration = const Duration(seconds: 5),
+  }) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          backgroundColor: backgroundColor,
+          behavior: SnackBarBehavior.floating,
+          duration: duration,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          content: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
@@ -447,9 +990,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         keyboardDismissBehavior:
                             ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
-                        itemCount: filteredClothes.length,
+                        itemCount: filteredClothes.length + 1,
                         itemBuilder: (context, index) {
-                          final item = filteredClothes[index];
+                          if (index == 0) {
+                            return AiWardrobeCard(
+                              clothes: allClothes,
+                              isLoading: _isWardrobeAiLoading,
+                              onGenerate: _generateWardrobeOutfit,
+                            );
+                          }
+
+                          final item = filteredClothes[index - 1];
 
                           return InkWell(
                             borderRadius: BorderRadius.circular(18),
