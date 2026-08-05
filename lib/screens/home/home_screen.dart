@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 
-import '../../models/clothing_item.dart';
-import '../../services/auth_service.dart';
-import '../../services/firestore_service.dart';
 import '../wardrobe/add_clothing_screen.dart';
 import '../wardrobe/clothing_detail_screen.dart';
-import '../../services/gemini_service.dart';
+
 import '../../widgets/ai_wardrobe_card.dart';
-import 'dart:async';
 import '../../widgets/ai_outfit_result_sheet.dart';
+
+import '../../models/clothing_item.dart';
 import '../../models/ai_outfit_result.dart';
 import '../../models/outfit_plan.dart';
+import '../../models/weather_info.dart';
+
+import '../../services/firestore_service.dart';
+import '../../services/gemini_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/location_service.dart';
+import '../../services/weather_service.dart';
+
+import '../mannequin/mannequin_preview_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,8 +29,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FirestoreService _firestoreService = FirestoreService();
-  final TextEditingController _searchController = TextEditingController();
   final GeminiService _geminiService = GeminiService();
+  final LocationService _locationService = LocationService();
+  final WeatherService _weatherService = WeatherService();
+
+  final TextEditingController _searchController = TextEditingController();
 
   bool _isWardrobeAiLoading = false;
 
@@ -459,10 +470,13 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
+      final WeatherInfo? weather = await _getWeatherForAi();
+
       final AiOutfitResult result = await _geminiService
           .generateStructuredWardrobeOutfit(
             clothes,
             occasion: selectedOccasion,
+            weather: weather,
           );
 
       final List<ClothingItem> selectedClothes = clothes.where((item) {
@@ -484,6 +498,17 @@ class _HomeScreenState extends State<HomeScreen> {
             suggestion: result.suggestion,
             occasion: selectedOccasion,
             selectedClothes: selectedClothes,
+            onPreviewOnMannequin: () {
+              Navigator.pop(sheetContext);
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      MannequinPreviewScreen(selectedClothes: selectedClothes),
+                ),
+              );
+            },
             onAddToPlanner: () {
               Navigator.pop(sheetContext);
 
@@ -809,6 +834,53 @@ class _HomeScreenState extends State<HomeScreen> {
       );
   }
 
+  Future<WeatherInfo?> _getWeatherForAi() async {
+    try {
+      final position = await _locationService.getCurrentPosition().timeout(
+        const Duration(seconds: 20),
+      );
+
+      return await _weatherService
+          .getCurrentWeather(
+            latitude: position.latitude,
+            longitude: position.longitude,
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (e) {
+      if (!mounted) return null;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.orange.shade700,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            content: const Row(
+              children: [
+                Icon(Icons.cloud_off_rounded, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "Hava durumu alınamadı. Kombin hava bilgisi olmadan hazırlanacak.",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
@@ -1038,12 +1110,66 @@ class _HomeScreenState extends State<HomeScreen> {
                                               16,
                                             ),
                                           ),
-                                          child: Icon(
-                                            Icons.checkroom,
-                                            size: 38,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                            child:
+                                                item.imageUrl.trim().isNotEmpty
+                                                ? Image.network(
+                                                    item.imageUrl,
+                                                    width: 70,
+                                                    height: 70,
+                                                    fit: BoxFit.cover,
+                                                    loadingBuilder:
+                                                        (
+                                                          context,
+                                                          child,
+                                                          loadingProgress,
+                                                        ) {
+                                                          if (loadingProgress ==
+                                                              null) {
+                                                            return child;
+                                                          }
+
+                                                          return const Center(
+                                                            child: SizedBox(
+                                                              width: 24,
+                                                              height: 24,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2.5,
+                                                                  ),
+                                                            ),
+                                                          );
+                                                        },
+                                                    errorBuilder:
+                                                        (
+                                                          context,
+                                                          error,
+                                                          stackTrace,
+                                                        ) {
+                                                          return Icon(
+                                                            Icons
+                                                                .broken_image_outlined,
+                                                            size: 34,
+                                                            color:
+                                                                Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .colorScheme
+                                                                    .primary,
+                                                          );
+                                                        },
+                                                  )
+                                                : Icon(
+                                                    Icons.checkroom,
+                                                    size: 38,
+                                                    color: Theme.of(
+                                                      context,
+                                                    ).colorScheme.primary,
+                                                  ),
                                           ),
                                         ),
                                         const SizedBox(width: 18),

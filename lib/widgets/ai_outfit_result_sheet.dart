@@ -7,6 +7,7 @@ class AiOutfitResultSheet extends StatelessWidget {
   final List<ClothingItem> selectedClothes;
   final VoidCallback onRegenerate;
   final VoidCallback onAddToPlanner;
+  final VoidCallback onPreviewOnMannequin;
 
   const AiOutfitResultSheet({
     super.key,
@@ -15,6 +16,7 @@ class AiOutfitResultSheet extends StatelessWidget {
     required this.selectedClothes,
     required this.onRegenerate,
     required this.onAddToPlanner,
+    required this.onPreviewOnMannequin,
   });
 
   List<String> _parseSuggestionItems() {
@@ -305,6 +307,20 @@ class AiOutfitResultSheet extends StatelessWidget {
             ),
 
             const SizedBox(height: 18),
+
+            SizedBox(
+              height: 52,
+              child: OutlinedButton.icon(
+                onPressed: onPreviewOnMannequin,
+                icon: const Icon(Icons.person_outline_rounded),
+                label: const Text(
+                  "Mankende Gör",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
 
             SizedBox(
               height: 52,

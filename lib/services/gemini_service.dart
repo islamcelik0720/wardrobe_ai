@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/ai_outfit_result.dart';
 import '../models/clothing_item.dart';
+import '../models/weather_info.dart';
+import '../models/clothing_analysis_result.dart';
 
 class GeminiService {
   static const String _modelName = 'gemini-3.5-flash-lite';
@@ -24,6 +28,24 @@ class GeminiService {
       'https://generativelanguage.googleapis.com/'
       'v1beta/models/$_modelName:generateContent',
     );
+  }
+
+  String _getImageMimeType(String filePath) {
+    final extension = filePath.toLowerCase();
+
+    if (extension.endsWith('.png')) {
+      return 'image/png';
+    }
+
+    if (extension.endsWith('.webp')) {
+      return 'image/webp';
+    }
+
+    if (extension.endsWith('.heic') || extension.endsWith('.heif')) {
+      return 'image/heic';
+    }
+
+    return 'image/jpeg';
   }
 
   Future<String> _sendPrompt(String prompt) async {
@@ -372,6 +394,7 @@ Kurallar:
   Future<AiOutfitResult> generateStructuredWardrobeOutfit(
     List<ClothingItem> clothes, {
     required String occasion,
+    WeatherInfo? weather,
   }) async {
     try {
       if (clothes.isEmpty) {
@@ -408,6 +431,22 @@ $number. Belge Kimliği: ${item.id}
           .where((id) => id.trim().isNotEmpty)
           .toList();
 
+      final String weatherText;
+
+      if (weather == null) {
+        weatherText = "Hava durumu bilgisi alınamadı.";
+      } else {
+        weatherText =
+            '''
+Anlık hava durumu:
+- Sıcaklık: ${weather.temperature.toStringAsFixed(0)}°C
+- Hissedilen sıcaklık: ${weather.apparentTemperature.toStringAsFixed(0)}°C
+- Durum: ${weather.description}
+- Yağış: ${weather.precipitation.toStringAsFixed(1)} mm
+- Rüzgâr: ${weather.windSpeed.toStringAsFixed(0)} km/sa
+''';
+      }
+
       final prompt =
           '''
 Sen WardrobeAI isimli akıllı gardırop uygulamasında çalışan
@@ -419,10 +458,17 @@ $wardrobeText
 
 Kombinin kullanım amacı: $occasion
 
+$weatherText
+
 Yalnızca bu listede bulunan kıyafetlerden uyumlu bir günlük
 kombin oluştur.
 
 Kurallar:
+- Kombini sıcaklık, hissedilen sıcaklık, yağış ve rüzgâra göre oluştur.
+- Hava sıcaksa ince ve nefes alan kumaşları önceliklendir.
+- Hava soğuksa katmanlı ve sıcak tutan parçaları önceliklendir.
+- Yağış varsa uygun dış giyim ve ayakkabı tercih et.
+- suggestion içinde hava durumunu kısa şekilde belirt.
 - Yalnızca Türkçe cevap ver.
 - Gardıropta bulunmayan hiçbir ürün önerme.
 - Mümkünse bir üst giyim, bir alt giyim, bir ayakkabı ve
@@ -461,6 +507,316 @@ ${allowedIds.join(', ')}
       );
     } catch (e) {
       throw Exception('Yapılandırılmış AI kombini oluşturulamadı: $e');
+    }
+  }
+
+  Future<http.Response> _sendImageAnalysisRequestWithRetry({
+    required Map<String, dynamic> requestBody,
+  }) async {
+    const int maxAttempts = 3;
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final response = await http
+            .post(
+              _endpoint,
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': _apiKey,
+              },
+              body: jsonEncode(requestBody),
+            )
+            .timeout(const Duration(seconds: 45));
+
+        final bool shouldRetry =
+            response.statusCode == 408 ||
+            response.statusCode == 429 ||
+            response.statusCode >= 500;
+
+        if (!shouldRetry || attempt == maxAttempts) {
+          return response;
+        }
+
+        final delaySeconds = 1 << (attempt - 1);
+
+        await Future.delayed(Duration(seconds: delaySeconds));
+      } on TimeoutException {
+        if (attempt == maxAttempts) {
+          rethrow;
+        }
+
+        final delaySeconds = 1 << (attempt - 1);
+
+        await Future.delayed(Duration(seconds: delaySeconds));
+      }
+    }
+
+    throw Exception('AI servisine bağlanılamadı.');
+  }
+
+  Future<ClothingAnalysisResult> analyzeClothingImage(File imageFile) async {
+    try {
+      if (!await imageFile.exists()) {
+        throw Exception('Analiz edilecek fotoğraf bulunamadı.');
+      }
+
+      final imageBytes = await imageFile.readAsBytes();
+
+      if (imageBytes.isEmpty) {
+        throw Exception('Seçilen fotoğraf boş.');
+      }
+
+      final String base64Image = base64Encode(imageBytes);
+      final String mimeType = _getImageMimeType(imageFile.path);
+
+      const prompt = '''
+Bu fotoğraftaki ana kıyafeti analiz et.
+
+Yalnızca fotoğrafta açıkça görülen ana kıyafeti değerlendir.
+Arka planı, insanı, askıyı veya diğer nesneleri kıyafet olarak
+yorumlama.
+
+Aşağıdaki alanları Türkçe olarak tahmin et:
+
+- category
+- color
+- fabric
+- season
+- brand
+- description
+
+Kurallar:
+- category yalnızca şu değerlerden biri olmalı:
+  Pantolon, Tişört, Gömlek, Kazak, Sweatshirt, Ceket,
+  Mont, Şort, Etek, Elbise, Ayakkabı
+- color yalnızca şu değerlerden biri olmalı:
+  Siyah, Beyaz, Krem, Bej, Gri, Mavi, Lacivert, Yeşil,
+  Kırmızı, Pembe, Mor, Sarı, Kahverengi, Turuncu
+- fabric yalnızca şu değerlerden biri olmalı:
+  Pamuk, Denim, Keten, Yün, Polyester, Deri,
+  Kadife, Viskon, İpek, Triko
+- season yalnızca şu değerlerden biri olmalı:
+  İlkbahar, Yaz, Sonbahar, Kış
+- Marka kesin biçimde görünmüyorsa brand alanını boş string yap.
+- Kumaş yalnızca görselden tahmindir; emin değilsen düşük güven ver.
+- Mevsimi kıyafetin kalınlığına ve kullanım biçimine göre tahmin et.
+- description alanında en fazla iki kısa Türkçe cümle kullan.
+- Güven oranlarını 0 ile 100 arasında tam sayı olarak ver.
+- Kullanıcı daha sonra bütün alanları değiştirebilir.
+''';
+
+      final Map<String, dynamic> requestBody = {
+        'contents': [
+          {
+            'role': 'user',
+            'parts': [
+              {'text': prompt},
+              {
+                'inline_data': {'mime_type': mimeType, 'data': base64Image},
+              },
+            ],
+          },
+        ],
+        'generationConfig': {
+          'maxOutputTokens': 700,
+          'temperature': 0.2,
+          'responseMimeType': 'application/json',
+          'responseSchema': {
+            'type': 'object',
+            'properties': {
+              'category': {
+                'type': 'string',
+                'enum': [
+                  'Pantolon',
+                  'Tişört',
+                  'Gömlek',
+                  'Kazak',
+                  'Sweatshirt',
+                  'Ceket',
+                  'Mont',
+                  'Şort',
+                  'Etek',
+                  'Elbise',
+                  'Ayakkabı',
+                ],
+              },
+              'color': {
+                'type': 'string',
+                'enum': [
+                  'Siyah',
+                  'Beyaz',
+                  'Krem',
+                  'Bej',
+                  'Gri',
+                  'Mavi',
+                  'Lacivert',
+                  'Yeşil',
+                  'Kırmızı',
+                  'Pembe',
+                  'Mor',
+                  'Sarı',
+                  'Kahverengi',
+                  'Turuncu',
+                ],
+              },
+              'fabric': {
+                'type': 'string',
+                'enum': [
+                  'Pamuk',
+                  'Denim',
+                  'Keten',
+                  'Yün',
+                  'Polyester',
+                  'Deri',
+                  'Kadife',
+                  'Viskon',
+                  'İpek',
+                  'Triko',
+                ],
+              },
+              'season': {
+                'type': 'string',
+                'enum': ['İlkbahar', 'Yaz', 'Sonbahar', 'Kış'],
+              },
+              'brand': {'type': 'string'},
+              'description': {'type': 'string'},
+              'categoryConfidence': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 100,
+              },
+              'colorConfidence': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 100,
+              },
+              'fabricConfidence': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 100,
+              },
+              'seasonConfidence': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 100,
+              },
+              'brandConfidence': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 100,
+              },
+            },
+            'required': [
+              'category',
+              'color',
+              'fabric',
+              'season',
+              'brand',
+              'description',
+              'categoryConfidence',
+              'colorConfidence',
+              'fabricConfidence',
+              'seasonConfidence',
+              'brandConfidence',
+            ],
+          },
+        },
+      };
+
+      final response = await _sendImageAnalysisRequestWithRetry(
+        requestBody: requestBody,
+      );
+      final dynamic decodedResponse;
+
+      try {
+        decodedResponse = jsonDecode(response.body);
+      } catch (_) {
+        throw Exception(
+          'Gemini geçersiz bir sunucu yanıtı döndürdü. '
+          'HTTP ${response.statusCode}',
+        );
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        String errorMessage = 'Fotoğraf analizi başarısız oldu.';
+
+        if (decodedResponse is Map<String, dynamic>) {
+          final error = decodedResponse['error'];
+
+          if (error is Map<String, dynamic>) {
+            errorMessage = error['message']?.toString() ?? errorMessage;
+          }
+        }
+
+        throw Exception('$errorMessage (HTTP ${response.statusCode})');
+      }
+
+      if (decodedResponse is! Map<String, dynamic>) {
+        throw Exception('Gemini yanıt biçimi geçersiz.');
+      }
+
+      final candidates = decodedResponse['candidates'];
+
+      if (candidates is! List || candidates.isEmpty) {
+        throw Exception('Gemini fotoğraf için analiz üretmedi.');
+      }
+
+      final firstCandidate = candidates.first;
+
+      if (firstCandidate is! Map<String, dynamic>) {
+        throw Exception('Gemini aday yanıtı geçersiz.');
+      }
+
+      final content = firstCandidate['content'];
+
+      if (content is! Map<String, dynamic>) {
+        throw Exception('Gemini analiz içeriği bulunamadı.');
+      }
+
+      final parts = content['parts'];
+
+      if (parts is! List || parts.isEmpty) {
+        throw Exception('Gemini analiz metni bulunamadı.');
+      }
+
+      final firstPart = parts.first;
+
+      if (firstPart is! Map<String, dynamic>) {
+        throw Exception('Gemini analiz parçası geçersiz.');
+      }
+
+      final String jsonText = firstPart['text']?.toString().trim() ?? '';
+
+      if (jsonText.isEmpty) {
+        throw Exception('Gemini boş analiz sonucu döndürdü.');
+      }
+
+      final dynamic decodedAnalysis;
+
+      try {
+        decodedAnalysis = jsonDecode(jsonText);
+      } catch (_) {
+        throw Exception(
+          'Gemini analiz sonucunu geçerli JSON olarak döndürmedi.',
+        );
+      }
+
+      if (decodedAnalysis is! Map<String, dynamic>) {
+        throw Exception('Fotoğraf analiz sonucu beklenen yapıda değil.');
+      }
+
+      final result = ClothingAnalysisResult.fromMap(decodedAnalysis);
+
+      if (result.category.isEmpty ||
+          result.color.isEmpty ||
+          result.fabric.isEmpty ||
+          result.season.isEmpty) {
+        throw Exception('AI bazı zorunlu kıyafet alanlarını belirleyemedi.');
+      }
+
+      return result;
+    } catch (e) {
+      throw Exception('Kıyafet fotoğrafı analiz edilemedi: $e');
     }
   }
 }

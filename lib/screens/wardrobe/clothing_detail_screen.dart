@@ -455,19 +455,71 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
+              width: double.infinity,
               height: 320,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
-                ),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Theme.of(context).dividerColor),
               ),
-              child: const Icon(
-                Icons.checkroom,
-                size: 150,
-                color: Colors.white,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: widget.clothing.imageUrl.trim().isNotEmpty
+                    ? Image.network(
+                        widget.clothing.imageUrl,
+                        width: double.infinity,
+                        height: 320,
+
+                        // Fotoğraf kırpılmaz.
+                        // Görselin tamamı kutunun içine sığdırılır.
+                        fit: BoxFit.contain,
+
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) {
+                            return child;
+                          }
+
+                          return const Center(
+                            child: SizedBox(
+                              width: 34,
+                              height: 34,
+                              child: CircularProgressIndicator(strokeWidth: 3),
+                            ),
+                          );
+                        },
+
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 70,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  "Fotoğraf yüklenemedi",
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      )
+                    : Center(
+                        child: Icon(
+                          Icons.checkroom,
+                          size: 120,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
               ),
             ),
 
