@@ -9,6 +9,8 @@ import '../models/ai_outfit_result.dart';
 import '../models/clothing_item.dart';
 import '../models/weather_info.dart';
 import '../models/clothing_analysis_result.dart';
+import '../models/style_chat_message.dart';
+import '../models/style_assistant_result.dart';
 
 class GeminiService {
   static const String _modelName = 'gemini-3.5-flash-lite';
@@ -603,6 +605,13 @@ Kurallar:
 - description alanında en fazla iki kısa Türkçe cümle kullan.
 - Güven oranlarını 0 ile 100 arasında tam sayı olarak ver.
 - Kullanıcı daha sonra bütün alanları değiştirebilir.
+- selectedClothingReasons alanında, seçtiğin her kıyafet için kısa bir seçim nedeni yaz.
+- Her açıklama yalnızca gardıroptaki gerçek clothingId ile eşleşsin.
+- Uydurma clothingId üretme.
+- Seçim nedenleri kısa, doğal ve Türkçe olsun.
+- Nedenlerde hava, renk uyumu, etkinlik, kumaş, favori durumu veya kullanım sıklığı gibi gerçek bilgileri kullan.
+- selectedClothingIds içinde olmayan bir kıyafet için neden üretme.
+- shouldShowScore false olduğunda selectedClothingReasons boş liste olsun.
 ''';
 
       final Map<String, dynamic> requestBody = {
@@ -818,5 +827,346 @@ Kurallar:
     } catch (e) {
       throw Exception('Kıyafet fotoğrafı analiz edilemedi: $e');
     }
+  }
+
+  Future<StyleAssistantResult> generateStyleAssistantResponse({
+    required List<ClothingItem> clothes,
+    required List<StyleChatMessage> messages,
+    String? weatherSummary,
+  }) async {
+    if (clothes.isEmpty) {
+      throw Exception(
+        'Stil önerisi oluşturmak için gardıropta kıyafet bulunmuyor.',
+      );
+    }
+
+    if (messages.isEmpty) {
+      throw Exception('Sohbet mesajı bulunamadı.');
+    }
+
+    final wardrobeText = clothes
+        .asMap()
+        .entries
+        .map((entry) {
+          final index = entry.key + 1;
+          final item = entry.value;
+
+          return '''
+$index.
+- ID: ${item.id}
+- Kategori: ${item.category}
+- Renk: ${item.color}
+- Kumaş: ${item.fabric}
+- Mevsim: ${item.season}
+- Marka: ${item.brand?.trim().isNotEmpty == true ? item.brand : 'Belirtilmedi'}
+- Favori: ${item.favorite ? 'Evet' : 'Hayır'}
+- Kullanım sayısı: ${item.timesUsed}
+- Not: ${item.notes?.trim().isNotEmpty == true ? item.notes : 'Yok'}
+''';
+        })
+        .join('\n');
+
+    final systemPrompt =
+        '''
+Sen WardrobeAI uygulamasında çalışan Türkçe bir kişisel stil danışmanısın.
+
+Kullanıcının gerçek gardırobu:
+
+$wardrobeText
+
+Hava durumu:
+${weatherSummary?.trim().isNotEmpty == true ? weatherSummary : 'Hava durumu bilgisi bulunmuyor.'}
+
+Kurallar:
+- Daima Türkçe cevap ver.
+- Öncelikle yalnızca kullanıcının gardırobunda bulunan kıyafetleri öner.
+- Gardıropta olmayan bir ürün gerekiyorsa bunun bir alışveriş önerisi olduğunu açıkça belirt.
+- Önceki sohbet mesajlarını dikkate al.
+- Kullanıcının son sorusuna doğrudan cevap ver.
+- Önerdiğin kıyafetleri kategori, renk ve kumaş bilgileriyle açıkça belirt.
+- Hava durumunu, kullanım amacını, mevsimi, favorileri ve kullanım sayılarını değerlendir.
+- Aynı kıyafet çok sık kullanılmışsa mümkün olduğunda alternatif öner.
+- Fotoğraftan tahmin edilen kumaş veya marka bilgilerini kesin gerçekmiş gibi sunma.
+- Cevabı doğal, yardımcı ve kısa paragraflarla yaz.
+- Çok uzun cevap verme.
+- Önerdiğin kombini 0 ile 100 arasında puanla.
+- outfitScore genel kombin uyumunu temsil etsin.
+- colorScore renklerin birbirine uyumunu temsil etsin.
+- weatherScore kombinin hava şartlarına uygunluğunu temsil etsin.
+- occasionScore kombinin kullanıcının etkinliğine uygunluğunu temsil etsin.
+- strengths alanında en fazla 3 kısa olumlu değerlendirme ver.
+- warnings alanında en fazla 3 kısa uyarı ver.
+- Uyarı bulunmuyorsa warnings alanını boş liste olarak döndür.
+- Gardıropta uygun kombin oluşturulamıyorsa bunu response alanında açıkça belirt ve düşük puan ver.
+- Kullanıcı yalnızca teşekkür, selamlaşma, vedalaşma veya kısa sohbet yapıyorsa shouldShowScore false olsun.
+- Kullanıcı bir kombin, kıyafet, renk, hava veya etkinlik önerisi istiyorsa shouldShowScore true olsun.
+- shouldShowScore false olduğunda puanları 0, strengths ve warnings alanlarını boş liste olarak döndür.
+- Gerçek bir kombin öneriyorsan selectedClothingIds alanına yalnızca gardırop listesindeki gerçek ID değerlerini yaz.
+- Gardıropta bulunmayan veya uydurma bir ID üretme.
+- Aynı ID'yi birden fazla kez ekleme.
+- Kombin için mümkünse üst giyim, alt giyim ve ayakkabı seç.
+- Kullanıcı belirli bir parça soruyorsa yalnızca gerekli parçaları seçebilirsin.
+- shouldShowScore false olduğunda selectedClothingIds boş liste olsun.
+- Gardıropta uygun parça bulunmuyorsa selectedClothingIds içine uygun olmayan bir ürün ekleme; eksik parçayı response alanında alışveriş önerisi olarak belirt.
+''';
+
+    final List<Map<String, dynamic>> contents = [];
+
+    contents.add({
+      'role': 'user',
+      'parts': [
+        {'text': systemPrompt},
+      ],
+    });
+
+    contents.add({
+      'role': 'model',
+      'parts': [
+        {
+          'text':
+              'Anladım. Kullanıcının gardırobunu, hava durumunu ve sohbet geçmişini dikkate alarak Türkçe stil önerileri vereceğim.',
+        },
+      ],
+    });
+
+    for (final message in messages) {
+      contents.add({
+        'role': message.isUser ? 'user' : 'model',
+        'parts': [
+          {'text': message.text},
+        ],
+      });
+    }
+
+    final response = await http
+        .post(
+          _endpoint,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': _apiKey,
+          },
+          body: jsonEncode({
+            'contents': contents,
+            'generationConfig': {
+              'temperature': 0.5,
+              'maxOutputTokens': 1100,
+              'responseMimeType': 'application/json',
+              'responseSchema': {
+                'type': 'object',
+                'properties': {
+                  'response': {
+                    'type': 'string',
+                    'description':
+                        'Kullanıcıya verilecek kısa ve doğal Türkçe stil cevabı.',
+                  },
+
+                  'shouldShowScore': {
+                    'type': 'boolean',
+                    'description':
+                        'Gerçek bir kombin önerisi veya kombin değerlendirmesi varsa true; '
+                        'selamlaşma, teşekkür, vedalaşma veya normal sohbet varsa false.',
+                  },
+
+                  'outfitScore': {
+                    'type': 'integer',
+                    'minimum': 0,
+                    'maximum': 100,
+                    'description': 'Kombinin genel uyum puanı.',
+                  },
+
+                  'colorScore': {
+                    'type': 'integer',
+                    'minimum': 0,
+                    'maximum': 100,
+                    'description': 'Kombindeki renk uyumu puanı.',
+                  },
+
+                  'weatherScore': {
+                    'type': 'integer',
+                    'minimum': 0,
+                    'maximum': 100,
+                    'description':
+                        'Kombinin güncel hava şartlarına uygunluk puanı.',
+                  },
+
+                  'occasionScore': {
+                    'type': 'integer',
+                    'minimum': 0,
+                    'maximum': 100,
+                    'description':
+                        'Kombinin belirtilen etkinliğe uygunluk puanı.',
+                  },
+
+                  'strengths': {
+                    'type': 'array',
+                    'description': 'Kombinin güçlü yönleri.',
+                    'items': {'type': 'string'},
+                    'maxItems': 3,
+                  },
+
+                  'warnings': {
+                    'type': 'array',
+                    'description':
+                        'Kombinle ilgili dikkat edilmesi gerekenler.',
+                    'items': {'type': 'string'},
+                    'maxItems': 3,
+                  },
+                  'selectedClothingIds': {
+                    'type': 'array',
+                    'description':
+                        'Önerilen kombinde kullanılacak ve gardırop listesinde gerçekten bulunan kıyafet ID değerleri.',
+                    'items': {'type': 'string'},
+                    'maxItems': 6,
+                  },
+                  'selectedClothingReasons': {
+                    'type': 'array',
+                    'description':
+                        'Seçilen her gerçek kıyafet için kısa Türkçe seçim nedeni.',
+                    'items': {
+                      'type': 'object',
+                      'properties': {
+                        'clothingId': {
+                          'type': 'string',
+                          'description':
+                              'selectedClothingIds listesindeki gerçek kıyafet ID değeri.',
+                        },
+                        'reason': {
+                          'type': 'string',
+                          'description':
+                              'Kıyafetin neden seçildiğini açıklayan kısa Türkçe cümle.',
+                        },
+                      },
+                      'required': ['clothingId', 'reason'],
+                    },
+                    'maxItems': 6,
+                  },
+                },
+
+                'required': [
+                  'response',
+                  'shouldShowScore',
+                  'outfitScore',
+                  'colorScore',
+                  'weatherScore',
+                  'occasionScore',
+                  'strengths',
+                  'warnings',
+                  'selectedClothingIds',
+                  'selectedClothingReasons',
+                ],
+              },
+            },
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+
+    final dynamic decodedBody;
+
+    try {
+      decodedBody = jsonDecode(response.body);
+    } catch (_) {
+      throw Exception('Stil asistanı geçersiz bir sunucu yanıtı döndürdü.');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String errorMessage = 'Stil asistanı yanıt oluşturamadı.';
+
+      if (decodedBody is Map<String, dynamic>) {
+        final error = decodedBody['error'];
+
+        if (error is Map<String, dynamic>) {
+          errorMessage = error['message']?.toString() ?? errorMessage;
+        }
+      }
+
+      throw Exception('$errorMessage HTTP ${response.statusCode}');
+    }
+
+    if (decodedBody is! Map<String, dynamic>) {
+      throw Exception('Stil asistanı yanıt biçimi geçersiz.');
+    }
+
+    final candidates = decodedBody['candidates'];
+
+    if (candidates is! List || candidates.isEmpty) {
+      throw Exception('Stil asistanı cevap üretmedi.');
+    }
+
+    final firstCandidate = candidates.first;
+
+    if (firstCandidate is! Map<String, dynamic>) {
+      throw Exception('Stil asistanı aday yanıtı geçersiz.');
+    }
+
+    final content = firstCandidate['content'];
+
+    if (content is! Map<String, dynamic>) {
+      throw Exception('Stil asistanı içerik döndürmedi.');
+    }
+
+    final parts = content['parts'];
+
+    if (parts is! List || parts.isEmpty) {
+      throw Exception('Stil asistanı metin döndürmedi.');
+    }
+
+    final jsonText = parts
+        .whereType<Map<String, dynamic>>()
+        .map((part) => part['text']?.toString() ?? '')
+        .join('\n')
+        .trim();
+
+    if (jsonText.isEmpty) {
+      throw Exception('Stil asistanı boş cevap döndürdü.');
+    }
+
+    final dynamic decodedResult;
+
+    try {
+      decodedResult = jsonDecode(jsonText);
+    } catch (_) {
+      throw Exception('Stil asistanı sonucunu geçerli JSON olarak döndürmedi.');
+    }
+
+    if (decodedResult is! Map<String, dynamic>) {
+      throw Exception('Stil asistanı sonucu beklenen yapıda değil.');
+    }
+
+    final result = StyleAssistantResult.fromMap(decodedResult);
+    final validClothingIds = clothes
+        .map((item) => item.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final filteredSelectedIds = result.selectedClothingIds
+        .where(validClothingIds.contains)
+        .toSet()
+        .toList();
+
+    final filteredReasons = result.selectedClothingReasons.where((item) {
+      return validClothingIds.contains(item.clothingId) &&
+          filteredSelectedIds.contains(item.clothingId);
+    }).toList();
+
+    if (result.response.isEmpty) {
+      throw Exception('Stil asistanı cevap metni oluşturmadı.');
+    }
+
+    return StyleAssistantResult(
+      response: result.response,
+      shouldShowScore: result.shouldShowScore,
+      outfitScore: result.outfitScore,
+      colorScore: result.colorScore,
+      weatherScore: result.weatherScore,
+      occasionScore: result.occasionScore,
+      strengths: result.strengths,
+      warnings: result.warnings,
+      selectedClothingIds: result.shouldShowScore
+          ? filteredSelectedIds
+          : const [],
+      selectedClothingReasons: result.shouldShowScore
+          ? filteredReasons
+          : const [],
+    );
   }
 }

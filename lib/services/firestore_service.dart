@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/clothing_item.dart';
 import '../models/outfit_plan.dart';
+import '../models/saved_outfit.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -103,5 +104,30 @@ class FirestoreService {
 
   Future<void> deleteOutfitPlan(String documentId) async {
     await _firestore.collection("outfitPlans").doc(documentId).delete();
+  }
+
+  Future<String> saveOutfit(SavedOutfit outfit) async {
+    final document = await _firestore
+        .collection("savedOutfits")
+        .add(outfit.toMap());
+
+    return document.id;
+  }
+
+  Stream<List<SavedOutfit>> getSavedOutfits(String uid) {
+    return _firestore
+        .collection("savedOutfits")
+        .where("uid", isEqualTo: uid)
+        .orderBy("createdAt", descending: true)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.map((document) {
+            return SavedOutfit.fromMap(document.data(), document.id);
+          }).toList();
+        });
+  }
+
+  Future<void> deleteSavedOutfit(String documentId) async {
+    await _firestore.collection("savedOutfits").doc(documentId).delete();
   }
 }

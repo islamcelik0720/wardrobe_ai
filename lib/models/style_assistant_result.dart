@@ -1,0 +1,79 @@
+import 'selected_clothing_reason.dart';
+
+class StyleAssistantResult {
+  final String response;
+  final int outfitScore;
+  final int colorScore;
+  final int weatherScore;
+  final int occasionScore;
+  final List<String> strengths;
+  final List<String> warnings;
+  final bool shouldShowScore;
+  final List<String> selectedClothingIds;
+  final List<SelectedClothingReason> selectedClothingReasons;
+
+  const StyleAssistantResult({
+    required this.response,
+    required this.outfitScore,
+    required this.colorScore,
+    required this.weatherScore,
+    required this.occasionScore,
+    required this.strengths,
+    required this.warnings,
+    required this.shouldShowScore,
+    required this.selectedClothingIds,
+    required this.selectedClothingReasons,
+  });
+
+  factory StyleAssistantResult.fromMap(Map<String, dynamic> map) {
+    return StyleAssistantResult(
+      response: map['response']?.toString().trim() ?? '',
+      outfitScore: _score(map['outfitScore']),
+      colorScore: _score(map['colorScore']),
+      weatherScore: _score(map['weatherScore']),
+      occasionScore: _score(map['occasionScore']),
+      strengths: _stringList(map['strengths']),
+      warnings: _stringList(map['warnings']),
+      selectedClothingIds: _stringList(map['selectedClothingIds']),
+      shouldShowScore: map['shouldShowScore'] == true,
+      selectedClothingReasons: _reasonList(map['selectedClothingReasons']),
+    );
+  }
+
+  static int _score(dynamic value) {
+    final parsed = value is num
+        ? value.toInt()
+        : int.tryParse(value?.toString() ?? '');
+
+    return (parsed ?? 0).clamp(0, 100);
+  }
+
+  static List<String> _stringList(dynamic value) {
+    if (value is! List) {
+      return [];
+    }
+
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  static List<SelectedClothingReason> _reasonList(dynamic value) {
+    if (value is! List) {
+      return [];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) {
+          return SelectedClothingReason.fromMap(
+            Map<String, dynamic>.from(item),
+          );
+        })
+        .where((item) {
+          return item.clothingId.isNotEmpty && item.reason.isNotEmpty;
+        })
+        .toList();
+  }
+}

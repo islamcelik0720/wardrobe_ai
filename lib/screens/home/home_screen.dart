@@ -11,17 +11,25 @@ import '../../models/clothing_item.dart';
 import '../../models/ai_outfit_result.dart';
 import '../../models/outfit_plan.dart';
 import '../../models/weather_info.dart';
+import '../../models/wardrobe_analysis.dart';
 
 import '../../services/firestore_service.dart';
 import '../../services/gemini_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
 import '../../services/weather_service.dart';
+import '../../services/wardrobe_analysis_service.dart';
+
+import '../analysis/wardrobe_analysis_screen.dart';
+
+import '../style_assistant/style_assistant_screen.dart';
 
 import '../mannequin/mannequin_preview_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onOpenWardrobe;
+
+  const HomeScreen({super.key, this.onOpenWardrobe});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -32,258 +40,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final GeminiService _geminiService = GeminiService();
   final LocationService _locationService = LocationService();
   final WeatherService _weatherService = WeatherService();
-
-  final TextEditingController _searchController = TextEditingController();
+  final WardrobeAnalysisService _wardrobeAnalysisService =
+      WardrobeAnalysisService();
 
   bool _isWardrobeAiLoading = false;
 
-  String _searchQuery = '';
-
-  String? _selectedCategoryFilter;
-  String? _selectedColorFilter;
-  String? _selectedSeasonFilter;
-  bool _showFavoritesOnly = false;
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
   String _normalizeText(String value) {
     return value.replaceAll('İ', 'i').replaceAll('I', 'ı').toLowerCase().trim();
-  }
-
-  bool _matchesSearch(ClothingItem item) {
-    final query = _normalizeText(_searchQuery);
-
-    if (query.isEmpty) {
-      return true;
-    }
-
-    final searchableText = _normalizeText(
-      [
-        item.category,
-        item.color,
-        item.fabric,
-        item.season,
-        item.brand ?? '',
-        item.notes ?? '',
-      ].join(' '),
-    );
-
-    return searchableText.contains(query);
-  }
-
-  bool _matchesFilters(ClothingItem item) {
-    final matchesCategory =
-        _selectedCategoryFilter == null ||
-        item.category == _selectedCategoryFilter;
-
-    final matchesColor =
-        _selectedColorFilter == null || item.color == _selectedColorFilter;
-
-    final matchesSeason =
-        _selectedSeasonFilter == null || item.season == _selectedSeasonFilter;
-
-    final matchesFavorite = !_showFavoritesOnly || item.favorite;
-
-    return matchesCategory && matchesColor && matchesSeason && matchesFavorite;
-  }
-
-  Future<void> _showFilterSheet() async {
-    String? tempCategory = _selectedCategoryFilter;
-    String? tempColor = _selectedColorFilter;
-    String? tempSeason = _selectedSeasonFilter;
-    bool tempFavoritesOnly = _showFavoritesOnly;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 44,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).dividerColor,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    const Row(
-                      children: [
-                        Icon(Icons.tune, color: Color(0xFF6A11CB)),
-                        SizedBox(width: 10),
-                        Text(
-                          "Kıyafetleri Filtrele",
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    DropdownButtonFormField<String>(
-                      initialValue: tempCategory,
-                      decoration: const InputDecoration(
-                        labelText: "Kategori",
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: "Pantolon",
-                          child: Text("Pantolon"),
-                        ),
-                        DropdownMenuItem(
-                          value: "Tişört",
-                          child: Text("Tişört"),
-                        ),
-                        DropdownMenuItem(
-                          value: "Gömlek",
-                          child: Text("Gömlek"),
-                        ),
-                        DropdownMenuItem(value: "Ceket", child: Text("Ceket")),
-                        DropdownMenuItem(
-                          value: "Ayakkabı",
-                          child: Text("Ayakkabı"),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        setModalState(() {
-                          tempCategory = value;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    DropdownButtonFormField<String>(
-                      initialValue: tempColor,
-                      decoration: const InputDecoration(
-                        labelText: "Renk",
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: "Siyah", child: Text("Siyah")),
-                        DropdownMenuItem(value: "Beyaz", child: Text("Beyaz")),
-                        DropdownMenuItem(value: "Mavi", child: Text("Mavi")),
-                        DropdownMenuItem(
-                          value: "Kırmızı",
-                          child: Text("Kırmızı"),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        setModalState(() {
-                          tempColor = value;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    DropdownButtonFormField<String>(
-                      initialValue: tempSeason,
-                      decoration: const InputDecoration(
-                        labelText: "Mevsim",
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: "İlkbahar",
-                          child: Text("İlkbahar"),
-                        ),
-                        DropdownMenuItem(value: "Yaz", child: Text("Yaz")),
-                        DropdownMenuItem(
-                          value: "Sonbahar",
-                          child: Text("Sonbahar"),
-                        ),
-                        DropdownMenuItem(value: "Kış", child: Text("Kış")),
-                      ],
-                      onChanged: (value) {
-                        setModalState(() {
-                          tempSeason = value;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text("Sadece favorileri göster"),
-                      secondary: const Icon(Icons.star, color: Colors.amber),
-                      value: tempFavoritesOnly,
-                      onChanged: (value) {
-                        setModalState(() {
-                          tempFavoritesOnly = value;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () {
-                              setModalState(() {
-                                tempCategory = null;
-                                tempColor = null;
-                                tempSeason = null;
-                                tempFavoritesOnly = false;
-                              });
-                            },
-                            child: const Text("Temizle"),
-                          ),
-                        ),
-
-                        const SizedBox(width: 12),
-
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _selectedCategoryFilter = tempCategory;
-                                _selectedColorFilter = tempColor;
-                                _selectedSeasonFilter = tempSeason;
-                                _showFavoritesOnly = tempFavoritesOnly;
-                              });
-
-                              Navigator.pop(sheetContext);
-                            },
-                            child: const Text("Uygula"),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   String _getFriendlyAiErrorMessage(Object error) {
@@ -881,6 +644,291 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Widget _buildWardrobeAnalysisCard(
+    BuildContext context,
+    WardrobeAnalysis analysis,
+  ) {
+    final Color scoreColor;
+
+    if (analysis.wardrobeScore >= 85) {
+      scoreColor = Colors.green;
+    } else if (analysis.wardrobeScore >= 70) {
+      scoreColor = Colors.blue;
+    } else if (analysis.wardrobeScore >= 50) {
+      scoreColor = Colors.orange;
+    } else {
+      scoreColor = Colors.red;
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6A11CB).withValues(alpha: 0.22),
+            blurRadius: 16,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.analytics_outlined, color: Colors.white, size: 28),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "Dolap Analizi",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Icon(Icons.auto_awesome, color: Colors.white70),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          Row(
+            children: [
+              Container(
+                width: 82,
+                height: 82,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    width: 2,
+                  ),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "${analysis.wardrobeScore}",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Text(
+                        "/ 100",
+                        style: TextStyle(color: Colors.white70, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 16),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      analysis.scoreLabel,
+                      style: TextStyle(
+                        color: scoreColor,
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      "${analysis.totalClothes} kıyafet • "
+                      "${analysis.unusedClothesCount} kullanılmamış",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "En sık renk: ${analysis.mostCommonColor}",
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          if (analysis.strengths.isNotEmpty)
+            _buildAnalysisMessage(
+              icon: Icons.check_circle_outline,
+              text: analysis.strengths.first,
+            ),
+
+          if (analysis.warnings.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildAnalysisMessage(
+              icon: Icons.warning_amber_rounded,
+              text: analysis.warnings.first,
+            ),
+          ],
+
+          if (analysis.recommendations.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildAnalysisMessage(
+              icon: Icons.lightbulb_outline_rounded,
+              text: analysis.recommendations.first,
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          SizedBox(
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF6A11CB),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => WardrobeAnalysisScreen(analysis: analysis),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.insights_outlined),
+              label: const Text(
+                "Detaylı Analizi Gör",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisMessage({required IconData icon, required String text}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.white, size: 19),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                height: 1.35,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStyleAssistantCard(
+    BuildContext context,
+    List<ClothingItem> clothes,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.chat_bubble_outline_rounded,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 13),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "AI Stil Asistanı",
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      "Etkinliğini yaz, gardırobundan uygun kombin bul.",
+                      style: TextStyle(fontSize: 13, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StyleAssistantScreen(clothes: clothes),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.auto_awesome_rounded),
+              label: const Text(
+                "Stil Asistanını Aç",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
@@ -937,64 +985,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ? const Center(child: Text('Kullanıcı oturumu bulunamadı.'))
           : Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'Kıyafet ara...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              tooltip: 'Aramayı temizle',
-                              icon: const Icon(Icons.close),
-                              onPressed: () {
-                                _searchController.clear();
-
-                                setState(() {
-                                  _searchQuery = '';
-                                });
-
-                                FocusScope.of(context).unfocus();
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF6A11CB),
-                          width: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _showFilterSheet,
-                      icon: const Icon(Icons.tune),
-                      label: const Text("Filtrele"),
-                    ),
-                  ),
-                ),
-
                 Expanded(
                   child: StreamBuilder<List<ClothingItem>>(
                     stream: _firestoreService.getClothes(user.uid),
@@ -1017,6 +1007,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       final allClothes = snapshot.data ?? [];
 
+                      final WardrobeAnalysis wardrobeAnalysis =
+                          _wardrobeAnalysisService.analyze(allClothes);
+
                       if (allClothes.isEmpty) {
                         return const Center(
                           child: Text(
@@ -1026,216 +1019,181 @@ class _HomeScreenState extends State<HomeScreen> {
                         );
                       }
 
-                      final filteredClothes = allClothes.where((item) {
-                        return _matchesSearch(item) && _matchesFilters(item);
-                      }).toList();
+                      final recentClothes = allClothes.take(3).toList();
 
-                      if (filteredClothes.isEmpty) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.search_off,
-                                  size: 70,
-                                  color: Colors.grey.shade400,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  '"$_searchQuery" aramasıyla eşleşen '
-                                  'kıyafet bulunamadı.',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-
-                      return ListView.builder(
+                      return ListView(
                         keyboardDismissBehavior:
                             ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
-                        itemCount: filteredClothes.length + 1,
-                        itemBuilder: (context, index) {
-                          if (index == 0) {
-                            return AiWardrobeCard(
-                              clothes: allClothes,
-                              isLoading: _isWardrobeAiLoading,
-                              onGenerate: _generateWardrobeOutfit,
-                            );
-                          }
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                        children: [
+                          _buildWardrobeAnalysisCard(context, wardrobeAnalysis),
 
-                          final item = filteredClothes[index - 1];
+                          const SizedBox(height: 4),
 
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(18),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      ClothingDetailScreen(clothing: item),
+                          AiWardrobeCard(
+                            clothes: allClothes,
+                            isLoading: _isWardrobeAiLoading,
+                            onGenerate: _generateWardrobeOutfit,
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          _buildStyleAssistantCard(context, allClothes),
+
+                          const SizedBox(height: 22),
+
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  "Son Eklenen Kıyafetler",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              );
-                            },
-                            child: Card(
-                              elevation: 6,
-                              shadowColor: Colors.black26,
-                              margin: const EdgeInsets.only(bottom: 18),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18),
                               ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          width: 70,
-                                          height: 70,
-                                          decoration: BoxDecoration(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primaryContainer,
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                            child:
-                                                item.imageUrl.trim().isNotEmpty
-                                                ? Image.network(
-                                                    item.imageUrl,
-                                                    width: 70,
-                                                    height: 70,
-                                                    fit: BoxFit.cover,
-                                                    loadingBuilder:
-                                                        (
-                                                          context,
-                                                          child,
-                                                          loadingProgress,
-                                                        ) {
-                                                          if (loadingProgress ==
-                                                              null) {
-                                                            return child;
-                                                          }
+                              TextButton.icon(
+                                onPressed: widget.onOpenWardrobe,
+                                icon: const Icon(Icons.arrow_forward_rounded),
+                                label: const Text("Tümünü Gör"),
+                              ),
+                            ],
+                          ),
 
-                                                          return const Center(
-                                                            child: SizedBox(
-                                                              width: 24,
-                                                              height: 24,
-                                                              child:
-                                                                  CircularProgressIndicator(
-                                                                    strokeWidth:
-                                                                        2.5,
-                                                                  ),
-                                                            ),
-                                                          );
-                                                        },
-                                                    errorBuilder:
-                                                        (
-                                                          context,
-                                                          error,
-                                                          stackTrace,
-                                                        ) {
-                                                          return Icon(
-                                                            Icons
-                                                                .broken_image_outlined,
-                                                            size: 34,
-                                                            color:
-                                                                Theme.of(
-                                                                      context,
-                                                                    )
-                                                                    .colorScheme
-                                                                    .primary,
-                                                          );
-                                                        },
-                                                  )
-                                                : Icon(
-                                                    Icons.checkroom,
-                                                    size: 38,
-                                                    color: Theme.of(
-                                                      context,
-                                                    ).colorScheme.primary,
-                                                  ),
+                          const SizedBox(height: 10),
+
+                          ...recentClothes.map((item) {
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        ClothingDetailScreen(clothing: item),
+                                  ),
+                                );
+                              },
+                              child: Card(
+                                elevation: 5,
+                                margin: const EdgeInsets.only(bottom: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 72,
+                                        height: 82,
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primaryContainer,
+                                          borderRadius: BorderRadius.circular(
+                                            15,
                                           ),
                                         ),
-                                        const SizedBox(width: 18),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                item.category,
-                                                style: const TextStyle(
-                                                  fontSize: 20,
-                                                  fontWeight: FontWeight.bold,
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            15,
+                                          ),
+                                          child: item.imageUrl.trim().isNotEmpty
+                                              ? Image.network(
+                                                  item.imageUrl,
+                                                  fit: BoxFit.cover,
+                                                  loadingBuilder:
+                                                      (
+                                                        context,
+                                                        child,
+                                                        loadingProgress,
+                                                      ) {
+                                                        if (loadingProgress ==
+                                                            null) {
+                                                          return child;
+                                                        }
+
+                                                        return const Center(
+                                                          child: SizedBox(
+                                                            width: 24,
+                                                            height: 24,
+                                                            child:
+                                                                CircularProgressIndicator(
+                                                                  strokeWidth:
+                                                                      2.5,
+                                                                ),
+                                                          ),
+                                                        );
+                                                      },
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) {
+                                                        return Icon(
+                                                          Icons
+                                                              .broken_image_outlined,
+                                                          color: Theme.of(
+                                                            context,
+                                                          ).colorScheme.primary,
+                                                        );
+                                                      },
+                                                )
+                                              : Icon(
+                                                  Icons.checkroom_rounded,
+                                                  size: 38,
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
                                                 ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              item.category,
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
                                               ),
-                                              const SizedBox(height: 8),
-                                              Text(item.color),
-                                              Text(item.fabric),
-                                              Text(item.season),
-                                              if (item.brand
-                                                      ?.trim()
-                                                      .isNotEmpty ==
-                                                  true) ...[
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  item.brand!,
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade600,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              "${item.color} • ${item.fabric}",
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              item.season,
+                                              style: TextStyle(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        if (item.favorite)
-                                          const Icon(
-                                            Icons.star,
-                                            color: Colors.amber,
-                                            size: 28,
-                                          ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      children: [
+                                      ),
+                                      if (item.favorite)
                                         const Icon(
-                                          Icons.repeat,
-                                          size: 20,
-                                          color: Colors.grey,
+                                          Icons.star_rounded,
+                                          color: Colors.amber,
                                         ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '${item.timesUsed} kez kullanıldı',
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                      const SizedBox(width: 5),
+                                      const Icon(Icons.chevron_right_rounded),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          }),
+                        ],
                       );
                     },
                   ),
