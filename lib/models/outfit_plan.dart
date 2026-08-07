@@ -7,6 +7,8 @@ class OutfitPlan {
   final List<String> clothingIds;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final bool isWorn;
+  final DateTime? wornAt;
 
   OutfitPlan({
     required this.id,
@@ -15,6 +17,8 @@ class OutfitPlan {
     required this.clothingIds,
     required this.createdAt,
     required this.updatedAt,
+    this.isWorn = false,
+    this.wornAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -24,6 +28,8 @@ class OutfitPlan {
       "clothingIds": clothingIds,
       "createdAt": Timestamp.fromDate(createdAt),
       "updatedAt": Timestamp.fromDate(updatedAt),
+      "isWorn": isWorn,
+      "wornAt": wornAt == null ? null : Timestamp.fromDate(wornAt!),
     };
   }
 
@@ -35,6 +41,8 @@ class OutfitPlan {
       clothingIds: List<String>.from(map["clothingIds"] ?? []),
       createdAt: _dateFromValue(map["createdAt"]),
       updatedAt: _dateFromValue(map["updatedAt"]),
+      isWorn: map["isWorn"] == true,
+      wornAt: map["wornAt"] == null ? null : _dateFromValue(map["wornAt"]),
     );
   }
 

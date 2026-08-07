@@ -5,12 +5,14 @@ import 'dart:async';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/wardrobe_memory.dart';
 import '../models/ai_outfit_result.dart';
 import '../models/clothing_item.dart';
 import '../models/weather_info.dart';
 import '../models/clothing_analysis_result.dart';
 import '../models/style_chat_message.dart';
 import '../models/style_assistant_result.dart';
+import '../models/wardrobe_gap_analysis_result.dart';
 
 class GeminiService {
   static const String _modelName = 'gemini-3.5-flash-lite';
@@ -832,6 +834,7 @@ Kurallar:
   Future<StyleAssistantResult> generateStyleAssistantResponse({
     required List<ClothingItem> clothes,
     required List<StyleChatMessage> messages,
+    required WardrobeMemory wardrobeMemory,
     String? weatherSummary,
   }) async {
     if (clothes.isEmpty) {
@@ -866,13 +869,65 @@ $index.
         })
         .join('\n');
 
+    final longUnusedDetails = clothes
+        .where((item) {
+          return wardrobeMemory.longUnusedClothingIds.contains(item.id);
+        })
+        .map((item) {
+          final lastWornAt = item.lastWornAt;
+
+          if (lastWornAt == null) {
+            return null;
+          }
+
+          final days = DateTime.now().difference(lastWornAt).inDays;
+
+          return '''
+ID: ${item.id}
+Kategori: ${item.category}
+Renk: ${item.color}
+Son giyilme: $days gün önce
+''';
+        })
+        .whereType<String>()
+        .join('\n');
+    final wardrobeMemoryText =
+        '''
+Gardırop hafızası:
+
+Toplam kıyafet:
+${wardrobeMemory.totalClothes}
+
+Toplam gerçek kullanım:
+${wardrobeMemory.totalUsage}
+
+En çok kullanılan renk:
+${wardrobeMemory.mostUsedColor}
+
+En çok kullanılan kategori:
+${wardrobeMemory.mostUsedCategory}
+
+Favori kıyafet ID'leri:
+${wardrobeMemory.favoriteClothingIds.isEmpty ? 'Yok' : wardrobeMemory.favoriteClothingIds.join(', ')}
+
+Sık kullanılan kıyafet ID'leri:
+${wardrobeMemory.frequentlyUsedClothingIds.isEmpty ? 'Yok' : wardrobeMemory.frequentlyUsedClothingIds.join(', ')}
+
+Hiç kullanılmamış / az kullanılan kıyafet ID'leri:
+${wardrobeMemory.rarelyUsedClothingIds.isEmpty ? 'Yok' : wardrobeMemory.rarelyUsedClothingIds.join(', ')}
+
+Uzun süredir giyilmeyen kıyafetlerin detayları:
+${longUnusedDetails.trim().isEmpty ? 'Yok' : longUnusedDetails}
+''';
     final systemPrompt =
         '''
 Sen WardrobeAI uygulamasında çalışan Türkçe bir kişisel stil danışmanısın.
 
 Kullanıcının gerçek gardırobu:
-
 $wardrobeText
+
+Kullanıcının gardırop kullanım hafızası:
+$wardrobeMemoryText
 
 Hava durumu:
 ${weatherSummary?.trim().isNotEmpty == true ? weatherSummary : 'Hava durumu bilgisi bulunmuyor.'}
@@ -908,6 +963,26 @@ Kurallar:
 - Kullanıcı belirli bir parça soruyorsa yalnızca gerekli parçaları seçebilirsin.
 - shouldShowScore false olduğunda selectedClothingIds boş liste olsun.
 - Gardıropta uygun parça bulunmuyorsa selectedClothingIds içine uygun olmayan bir ürün ekleme; eksik parçayı response alanında alışveriş önerisi olarak belirt.
+- Önceki AI cevaplarında [ÖNCEKİ KOMBİN BAĞLAMI] bulunuyorsa bu bilgileri konuşma hafızası olarak kullan.
+- Kullanıcı "ayakkabıyı değiştir", "pantolonu değiştir", "üstü değiştir" gibi bir istek yaparsa önceki kombinin diğer uygun parçalarını mümkün olduğunca koru.
+- Kullanıcı "aynı kombin ama daha şık", "daha spor yap", "başka renk olsun" gibi bir istek yaparsa önceki kombini başlangıç noktası olarak kullan.
+- Kullanıcı açıkça yeni bir kombin isterse önceki seçimi korumak zorunda değilsin.
+- Bir parçayı değiştirdiğinde selectedClothingIds alanında eski parçanın ID'sini çıkar ve yerine yeni seçilen gerçek kıyafet ID'sini ekle.
+- Gardırop hafızasını stil kararlarında kullan.
+- Kullanıcı açıkça favori istemiyorsa favorilere körü körüne öncelik verme.
+- Aynı sık kullanılan kıyafetleri sürekli tekrar önermemeye çalış.
+- Uygunsa hiç kullanılmamış veya az kullanılmış kıyafetleri değerlendirmeye öncelik ver.
+- Ancak sırf az kullanılmış diye hava, renk veya etkinlik açısından kötü bir parçayı önerme.
+- Kullanıcının gerçek kullanım alışkanlıkları ile mevcut etkinlik ihtiyacı arasında denge kur.
+- Uzun süredir giyilmeyen kıyafetlerin son kullanım gün sayılarını dikkate al.
+- Uygun olduğunda kullanıcıya "Bu parçayı yaklaşık X gündür giymedin" şeklinde doğal bir açıklama yap.
+- Gün sayısını yalnızca verilen gardırop hafızası verisine dayanarak söyle.
+- Hava, etkinlik veya renk uyumu uygun değilse sırf uzun süredir giyilmedi diye kıyafeti önerme.
+- Kullanıcı alternatif kombin isterse önceki AI cevabındaki [ÖNCEKİ KOMBİN BAĞLAMI] içindeki kıyafet ID'lerini mümkün olduğunca tekrar kullanma.
+- Alternatif kombin oluştururken aynı kullanım amacı, hava durumu ve stil seviyesini koru.
+- Gardıropta yeterli farklı parça yoksa aynı parçayı tekrar kullanabileceğini açıkça belirt.
+- Kullanıcı yalnızca belirli bir parçanın alternatifini isterse diğer uygun parçaları mümkün olduğunca koru ve sadece istenen kategoriyi değiştir.
+- Alternatif kombinlerde selectedClothingIds alanı yeni seçilen gerçek kıyafet ID'lerini içersin.
 ''';
 
     final List<Map<String, dynamic>> contents = [];
@@ -930,10 +1005,30 @@ Kurallar:
     });
 
     for (final message in messages) {
+      String messageText = message.text;
+
+      if (message.isAssistant &&
+          message.assistantResult != null &&
+          message.assistantResult!.selectedClothingIds.isNotEmpty) {
+        final selectedIds = message.assistantResult!.selectedClothingIds.join(
+          ", ",
+        );
+
+        messageText =
+            '''
+${message.text}
+
+[ÖNCEKİ KOMBİN BAĞLAMI]
+Bu cevapta seçilen gerçek kıyafet ID'leri:
+$selectedIds
+[/ÖNCEKİ KOMBİN BAĞLAMI]
+''';
+      }
+
       contents.add({
         'role': message.isUser ? 'user' : 'model',
         'parts': [
-          {'text': message.text},
+          {'text': messageText},
         ],
       });
     }
@@ -1168,5 +1263,229 @@ Kurallar:
           ? filteredReasons
           : const [],
     );
+  }
+
+  Future<WardrobeGapAnalysisResult> analyzeWardrobeGaps({
+    required List<ClothingItem> clothes,
+    required WardrobeMemory wardrobeMemory,
+  }) async {
+    if (clothes.isEmpty) {
+      throw Exception('Gardırop analizi için en az bir kıyafet gerekli.');
+    }
+
+    final wardrobeText = clothes
+        .asMap()
+        .entries
+        .map((entry) {
+          final index = entry.key + 1;
+          final item = entry.value;
+
+          return '''
+$index.
+- ID: ${item.id}
+- Kategori: ${item.category}
+- Renk: ${item.color}
+- Kumaş: ${item.fabric}
+- Mevsim: ${item.season}
+- Marka: ${item.brand?.trim().isNotEmpty == true ? item.brand : 'Belirtilmedi'}
+- Favori: ${item.favorite ? 'Evet' : 'Hayır'}
+- Kullanım sayısı: ${item.timesUsed}
+- Son giyilme: ${item.lastWornAt == null ? 'Hiç giyilmedi / bilinmiyor' : item.lastWornAt!.toIso8601String()}
+''';
+        })
+        .join('\n');
+
+    final memoryText =
+        '''
+Toplam kıyafet: ${wardrobeMemory.totalClothes}
+Toplam kullanım: ${wardrobeMemory.totalUsage}
+En çok kullanılan renk: ${wardrobeMemory.mostUsedColor}
+En çok kullanılan kategori: ${wardrobeMemory.mostUsedCategory}
+
+Favori ID'ler:
+${wardrobeMemory.favoriteClothingIds.isEmpty ? 'Yok' : wardrobeMemory.favoriteClothingIds.join(', ')}
+
+Sık kullanılan ID'ler:
+${wardrobeMemory.frequentlyUsedClothingIds.isEmpty ? 'Yok' : wardrobeMemory.frequentlyUsedClothingIds.join(', ')}
+
+Hiç kullanılmamış ID'ler:
+${wardrobeMemory.rarelyUsedClothingIds.isEmpty ? 'Yok' : wardrobeMemory.rarelyUsedClothingIds.join(', ')}
+
+Uzun süredir kullanılmayan ID'ler:
+${wardrobeMemory.longUnusedClothingIds.isEmpty ? 'Yok' : wardrobeMemory.longUnusedClothingIds.join(', ')}
+''';
+
+    final prompt =
+        '''
+Sen WardrobeAI uygulamasında çalışan Türkçe bir gardırop analiz asistanısın.
+
+Kullanıcının gerçek gardırop verisi:
+
+$wardrobeText
+
+Gardırop hafızası:
+
+$memoryText
+
+Görevin:
+- Gardırobun genel dengesini analiz et.
+- Eksik kategori ve renkleri sadece gerçek gardırop verisine dayanarak belirle.
+- Fazla tekrar eden parçaları tespit et.
+- Kullanıcının kombin çeşitliliğini artırabilecek öneriler ver.
+- Kullanıcıyı gereksiz alışverişe yönlendirme.
+- Bir şey gerçekten eksik değilse eksikmiş gibi söyleme.
+- Öneriler kısa, net ve Türkçe olsun.
+- wardrobeScore 0-100 arasında genel gardırop dengesi puanı olsun.
+- strengths en fazla 4 madde olsun.
+- missingCategories en fazla 5 madde olsun.
+- missingColors en fazla 5 madde olsun.
+- overrepresentedItems en fazla 5 madde olsun.
+- recommendations en fazla 5 madde olsun.
+- summary kısa bir genel değerlendirme olsun.
+''';
+
+    final response = await http
+        .post(
+          _endpoint,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': _apiKey,
+          },
+          body: jsonEncode({
+            'contents': [
+              {
+                'role': 'user',
+                'parts': [
+                  {'text': prompt},
+                ],
+              },
+            ],
+            'generationConfig': {
+              'temperature': 0.3,
+              'maxOutputTokens': 1200,
+              'responseMimeType': 'application/json',
+              'responseSchema': {
+                'type': 'object',
+                'properties': {
+                  'wardrobeScore': {
+                    'type': 'integer',
+                    'minimum': 0,
+                    'maximum': 100,
+                  },
+                  'strengths': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'maxItems': 4,
+                  },
+                  'missingCategories': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'maxItems': 5,
+                  },
+                  'missingColors': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'maxItems': 5,
+                  },
+                  'overrepresentedItems': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'maxItems': 5,
+                  },
+                  'recommendations': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'maxItems': 5,
+                  },
+                  'summary': {'type': 'string'},
+                },
+                'required': [
+                  'wardrobeScore',
+                  'strengths',
+                  'missingCategories',
+                  'missingColors',
+                  'overrepresentedItems',
+                  'recommendations',
+                  'summary',
+                ],
+              },
+            },
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+
+    final dynamic decodedBody;
+
+    try {
+      decodedBody = jsonDecode(response.body);
+    } catch (_) {
+      throw Exception('Gardırop analizi geçersiz bir sunucu yanıtı döndürdü.');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String message = 'Gardırop analizi oluşturulamadı.';
+
+      if (decodedBody is Map<String, dynamic>) {
+        final error = decodedBody['error'];
+
+        if (error is Map<String, dynamic>) {
+          message = error['message']?.toString() ?? message;
+        }
+      }
+
+      throw Exception('$message HTTP ${response.statusCode}');
+    }
+
+    if (decodedBody is! Map<String, dynamic>) {
+      throw Exception('Gardırop analizi yanıt biçimi geçersiz.');
+    }
+
+    final candidates = decodedBody['candidates'];
+
+    if (candidates is! List || candidates.isEmpty) {
+      throw Exception('Gardırop analizi cevap üretmedi.');
+    }
+
+    final firstCandidate = candidates.first;
+
+    if (firstCandidate is! Map<String, dynamic>) {
+      throw Exception('Gardırop analizi aday yanıtı geçersiz.');
+    }
+
+    final content = firstCandidate['content'];
+
+    if (content is! Map<String, dynamic>) {
+      throw Exception('Gardırop analizi içerik döndürmedi.');
+    }
+
+    final parts = content['parts'];
+
+    if (parts is! List || parts.isEmpty) {
+      throw Exception('Gardırop analizi metin döndürmedi.');
+    }
+
+    final jsonText = parts
+        .whereType<Map<String, dynamic>>()
+        .map((part) => part['text']?.toString() ?? '')
+        .join('\n')
+        .trim();
+
+    if (jsonText.isEmpty) {
+      throw Exception('Gardırop analizi boş cevap döndürdü.');
+    }
+
+    final dynamic decodedResult;
+
+    try {
+      decodedResult = jsonDecode(jsonText);
+    } catch (_) {
+      throw Exception('Gardırop analizi geçerli JSON döndürmedi.');
+    }
+
+    if (decodedResult is! Map<String, dynamic>) {
+      throw Exception('Gardırop analizi beklenen yapıda değil.');
+    }
+
+    return WardrobeGapAnalysisResult.fromMap(decodedResult);
   }
 }

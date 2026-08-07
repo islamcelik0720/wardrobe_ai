@@ -25,6 +25,23 @@ class StyleAssistantResult {
     required this.selectedClothingReasons,
   });
 
+  Map<String, dynamic> toMap() {
+    return {
+      'response': response,
+      'shouldShowScore': shouldShowScore,
+      'outfitScore': outfitScore,
+      'colorScore': colorScore,
+      'weatherScore': weatherScore,
+      'occasionScore': occasionScore,
+      'strengths': strengths,
+      'warnings': warnings,
+      'selectedClothingIds': selectedClothingIds,
+      'selectedClothingReasons': selectedClothingReasons
+          .map((item) => item.toMap())
+          .toList(),
+    };
+  }
+
   factory StyleAssistantResult.fromMap(Map<String, dynamic> map) {
     return StyleAssistantResult(
       response: map['response']?.toString().trim() ?? '',

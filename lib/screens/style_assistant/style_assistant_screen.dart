@@ -5,9 +5,14 @@ import '../../models/clothing_item.dart';
 import '../../models/style_chat_message.dart';
 import '../../models/style_assistant_result.dart';
 import '../../models/saved_outfit.dart';
+import '../../models/style_chat_session.dart';
+import '../../models/wardrobe_memory.dart';
 
+import 'style_chat_history_screen.dart';
 import '../wardrobe/clothing_detail_screen.dart';
 
+import '../../services/wardrobe_memory_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/gemini_service.dart';
 import '../../services/location_service.dart';
 import '../../services/weather_service.dart';
@@ -24,6 +29,8 @@ class StyleAssistantScreen extends StatefulWidget {
 
 class _StyleAssistantScreenState extends State<StyleAssistantScreen> {
   final TextEditingController _messageController = TextEditingController();
+  String? _currentSessionId;
+  DateTime? _currentSessionCreatedAt;
 
   final ScrollController _scrollController = ScrollController();
 
@@ -31,6 +38,7 @@ class _StyleAssistantScreenState extends State<StyleAssistantScreen> {
   final GeminiService _geminiService = GeminiService();
   final LocationService _locationService = LocationService();
   final WeatherService _weatherService = WeatherService();
+  final WardrobeMemoryService _wardrobeMemoryService = WardrobeMemoryService();
   String? _weatherSummary;
 
   final List<StyleChatMessage> _messages = [];
@@ -102,6 +110,136 @@ Rüzgâr: ${weather.windSpeed.toStringAsFixed(0)} km/sa
     }
   }
 
+  String _buildSessionTitle() {
+    for (final message in _messages) {
+      if (message.isUser && message.text.trim().isNotEmpty) {
+        final text = message.text.trim();
+
+        if (text.length <= 40) {
+          return text;
+        }
+
+        return "${text.substring(0, 40)}...";
+      }
+    }
+
+    return "Stil Sohbeti";
+  }
+
+  Future<void> _saveCurrentChatSession() async {
+    final user = AuthService().currentUser;
+
+    if (user == null || _messages.isEmpty) {
+      return;
+    }
+
+    final now = DateTime.now();
+
+    if (_currentSessionId == null) {
+      final session = StyleChatSession(
+        id: "",
+        uid: user.uid,
+        title: _buildSessionTitle(),
+        messages: List<StyleChatMessage>.from(_messages),
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      final sessionId = await _firestoreService.createStyleChatSession(session);
+
+      if (!mounted) return;
+
+      _currentSessionId = sessionId;
+      _currentSessionCreatedAt = now;
+
+      return;
+    }
+
+    final session = StyleChatSession(
+      id: _currentSessionId!,
+      uid: user.uid,
+      title: _buildSessionTitle(),
+      messages: List<StyleChatMessage>.from(_messages),
+      createdAt: _currentSessionCreatedAt ?? now,
+      updatedAt: now,
+    );
+
+    await _firestoreService.updateStyleChatSession(session);
+  }
+
+  Future<void> _requestAlternativeOutfit(StyleAssistantResult result) async {
+    if (_isLoading) {
+      return;
+    }
+
+    if (result.selectedClothingIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Alternatif oluşturmak için önce bir kombin oluşturulmalı.",
+          ),
+        ),
+      );
+      return;
+    }
+
+    final selectedIds = result.selectedClothingIds.join(", ");
+
+    _messageController.text =
+        '''
+Az önce önerdiğin kombine alternatif bir kombin oluştur.
+
+Önceki kombin kıyafet ID'leri:
+$selectedIds
+
+Mümkünse önceki kombindeki parçaları tekrar kullanma.
+Aynı kullanım amacı ve hava koşullarına uygun, farklı gerçek gardırop parçaları seç.
+''';
+
+    _messageController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _messageController.text.length),
+    );
+
+    await _sendMessage();
+  }
+
+  Future<void> _requestPartialAlternative({
+    required StyleAssistantResult result,
+    required String target,
+  }) async {
+    if (_isLoading) {
+      return;
+    }
+
+    if (result.selectedClothingIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Önce bir kombin oluşturmalısın.")),
+      );
+      return;
+    }
+
+    final selectedIds = result.selectedClothingIds.join(", ");
+
+    _messageController.text =
+        '''
+Az önce önerdiğin kombini temel al.
+
+Mevcut kombin kıyafet ID'leri:
+$selectedIds
+
+Sadece $target parçasını değiştir.
+Diğer uygun parçaları mümkün olduğunca aynı bırak.
+Yeni seçtiğin parça mutlaka gardırobumdaki gerçek kıyafetlerden biri olsun.
+Hava durumu ve kullanım amacına uygunluğu koru.
+''';
+
+    _messageController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _messageController.text.length),
+    );
+
+    await _sendMessage();
+  }
+
   Future<void> _sendMessage() async {
     final messageText = _messageController.text.trim();
 
@@ -122,15 +260,33 @@ Rüzgâr: ${weather.windSpeed.toStringAsFixed(0)} km/sa
     _messageController.clear();
     _scrollToBottom();
 
+    try {
+      await _saveCurrentChatSession();
+    } catch (e) {
+      debugPrint("Kullanıcı mesajı sohbet geçmişine kaydedilemedi: $e");
+    }
+
     // Gemini bağlantısını sonraki adımda ekleyeceğiz.
     try {
       final weatherSummary = await _getWeatherSummary();
+
+      final user = AuthService().currentUser;
+
+      if (user == null) {
+        throw Exception("Kullanıcı oturumu bulunamadı.");
+      }
+
+      final WardrobeMemory wardrobeMemory = _wardrobeMemoryService.buildMemory(
+        uid: user.uid,
+        clothes: widget.clothes,
+      );
 
       final StyleAssistantResult result = await _geminiService
           .generateStyleAssistantResponse(
             clothes: widget.clothes,
             messages: List<StyleChatMessage>.from(_messages),
             weatherSummary: weatherSummary,
+            wardrobeMemory: wardrobeMemory,
           );
 
       if (!mounted) return;
@@ -144,6 +300,11 @@ Rüzgâr: ${weather.windSpeed.toStringAsFixed(0)} km/sa
       setState(() {
         _messages.add(assistantMessage);
       });
+      try {
+        await _saveCurrentChatSession();
+      } catch (e) {
+        debugPrint("AI mesajı sohbet geçmişine kaydedilemedi: $e");
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -318,7 +479,75 @@ Rüzgâr: ${weather.windSpeed.toStringAsFixed(0)} km/sa
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('AI Stil Asistanı'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text("AI Stil Asistanı"),
+        actions: [
+          IconButton(
+            tooltip: "Yeni Sohbet",
+            icon: const Icon(Icons.add_comment_outlined),
+            onPressed: () {
+              if (_messages.isEmpty) {
+                return;
+              }
+
+              setState(() {
+                _messages.clear();
+
+                _currentSessionId = null;
+                _currentSessionCreatedAt = null;
+
+                _savingOutfitMessageIds.clear();
+                _savedOutfitMessageIds.clear();
+
+                _weatherSummary = null;
+              });
+
+              _messageController.clear();
+
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  const SnackBar(
+                    content: Text("Yeni sohbet başlatıldı."),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+            },
+          ),
+          IconButton(
+            tooltip: "Sohbet Geçmişi",
+            icon: const Icon(Icons.history_rounded),
+            onPressed: () async {
+              final selectedSession = await Navigator.push<StyleChatSession>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const StyleChatHistoryScreen(),
+                ),
+              );
+
+              if (selectedSession == null) {
+                return;
+              }
+
+              setState(() {
+                _messages
+                  ..clear()
+                  ..addAll(selectedSession.messages);
+
+                _currentSessionId = selectedSession.id;
+
+                _currentSessionCreatedAt = selectedSession.createdAt;
+
+                _savingOutfitMessageIds.clear();
+                _savedOutfitMessageIds.clear();
+                _weatherSummary = null;
+              });
+
+              _scrollToBottom();
+            },
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -765,6 +994,76 @@ Rüzgâr: ${weather.windSpeed.toStringAsFixed(0)} km/sa
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
+          ),
+          const SizedBox(height: 10),
+
+          SizedBox(
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: _isLoading
+                  ? null
+                  : () {
+                      _requestAlternativeOutfit(result);
+                    },
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text(
+                "Alternatif Kombin Oluştur",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          const Text(
+            "Hızlı Değiştir",
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+
+          const SizedBox(height: 8),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ActionChip(
+                avatar: const Icon(Icons.checkroom_outlined, size: 18),
+                label: const Text("Üstü Değiştir"),
+                onPressed: _isLoading
+                    ? null
+                    : () {
+                        _requestPartialAlternative(
+                          result: result,
+                          target: "üst giyim",
+                        );
+                      },
+              ),
+
+              ActionChip(
+                avatar: const Icon(Icons.style_outlined, size: 18),
+                label: const Text("Altı Değiştir"),
+                onPressed: _isLoading
+                    ? null
+                    : () {
+                        _requestPartialAlternative(
+                          result: result,
+                          target: "alt giyim",
+                        );
+                      },
+              ),
+
+              ActionChip(
+                avatar: const Icon(Icons.directions_walk_outlined, size: 18),
+                label: const Text("Ayakkabıyı Değiştir"),
+                onPressed: _isLoading
+                    ? null
+                    : () {
+                        _requestPartialAlternative(
+                          result: result,
+                          target: "ayakkabı",
+                        );
+                      },
+              ),
+            ],
           ),
         ],
       ),

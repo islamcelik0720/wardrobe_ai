@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class ClothingItem {
   final String id;
   final String uid;
@@ -11,6 +13,7 @@ class ClothingItem {
   final String? notes;
   final int timesUsed;
   final DateTime createdAt;
+  final DateTime? lastWornAt;
 
   ClothingItem({
     required this.id,
@@ -25,6 +28,7 @@ class ClothingItem {
     this.notes,
     required this.timesUsed,
     required this.createdAt,
+    this.lastWornAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -40,6 +44,7 @@ class ClothingItem {
       "notes": notes ?? "",
       "timesUsed": timesUsed,
       "createdAt": createdAt,
+      "lastWornAt": lastWornAt == null ? null : Timestamp.fromDate(lastWornAt!),
     };
   }
 
@@ -57,6 +62,24 @@ class ClothingItem {
       notes: map["notes"],
       timesUsed: map["timesUsed"] ?? 0,
       createdAt: map["createdAt"].toDate(),
+      lastWornAt: map["lastWornAt"] == null
+          ? null
+          : _dateFromValue(map["lastWornAt"]),
     );
+  }
+  static DateTime _dateFromValue(dynamic value) {
+    if (value is Timestamp) {
+      return value.toDate();
+    }
+
+    if (value is DateTime) {
+      return value;
+    }
+
+    if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.now();
+    }
+
+    return DateTime.now();
   }
 }

@@ -18,6 +18,7 @@ class _OutfitPlannerScreenState extends State<OutfitPlannerScreen> {
 
   final Set<String> _savingDays = {};
   final Set<String> _deletingDays = {};
+  final Set<String> _wearingDays = {};
 
   final List<String> days = const [
     "Pazartesi",
@@ -164,6 +165,97 @@ class _OutfitPlannerScreenState extends State<OutfitPlannerScreen> {
       if (mounted) {
         setState(() {
           _savingDays.remove(day);
+        });
+      }
+    }
+  }
+
+  Future<void> _markPlanAsWorn({
+    required String day,
+    required OutfitPlan plan,
+  }) async {
+    if (plan.isWorn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Bu kombin zaten giyildi olarak işaretlenmiş."),
+        ),
+      );
+      return;
+    }
+    if (_wearingDays.contains(day)) {
+      return;
+    }
+
+    if (plan.clothingIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Bu planda kullanılacak kıyafet bulunmuyor."),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _wearingDays.add(day);
+    });
+
+    try {
+      await _firestoreService.incrementUsageForClothes(plan.clothingIds);
+      await _firestoreService.markOutfitPlanAsWorn(plan.id);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "Kombin bugün giyildi olarak kaydedildi.",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            content: const Text(
+              "Kullanım bilgisi güncellenemedi.",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _wearingDays.remove(day);
         });
       }
     }
@@ -391,10 +483,10 @@ class _OutfitPlannerScreenState extends State<OutfitPlannerScreen> {
                                   .toList();
 
                         final isSaving = _savingDays.contains(day);
-
                         final isDeleting = _deletingDays.contains(day);
+                        final isWearing = _wearingDays.contains(day);
 
-                        final isBusy = isSaving || isDeleting;
+                        final isBusy = isSaving || isDeleting || isWearing;
 
                         return Card(
                           elevation: 4,
@@ -587,6 +679,50 @@ class _OutfitPlannerScreenState extends State<OutfitPlannerScreen> {
                                   ),
 
                                 const SizedBox(height: 14),
+
+                                if (plan != null &&
+                                    plannedClothes.isNotEmpty) ...[
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: ElevatedButton.icon(
+                                      onPressed: isBusy || plan.isWorn
+                                          ? null
+                                          : () {
+                                              _markPlanAsWorn(
+                                                day: day,
+                                                plan: plan,
+                                              );
+                                            },
+                                      icon: isWearing
+                                          ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.5,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : Icon(
+                                              plan.isWorn
+                                                  ? Icons.check_circle_rounded
+                                                  : Icons.checkroom_rounded,
+                                            ),
+                                      label: Text(
+                                        plan.isWorn
+                                            ? "Bugün Giyildi"
+                                            : isWearing
+                                            ? "Kaydediliyor..."
+                                            : "Bugün Giydim",
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 10),
+                                ],
 
                                 SizedBox(
                                   width: double.infinity,

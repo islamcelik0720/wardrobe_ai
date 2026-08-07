@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/clothing_item.dart';
 import '../models/outfit_plan.dart';
 import '../models/saved_outfit.dart';
+import '../models/style_chat_session.dart';
+import '../models/wardrobe_gap_analysis_result.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -62,6 +64,50 @@ class FirestoreService {
   Future<void> incrementUsage(String documentId) async {
     await _firestore.collection("clothes").doc(documentId).update({
       "timesUsed": FieldValue.increment(1),
+    });
+  }
+
+  Future<void> incrementUsageForClothes(List<String> clothingIds) async {
+    if (clothingIds.isEmpty) {
+      return;
+    }
+
+    final batch = _firestore.batch();
+
+    for (final clothingId in clothingIds) {
+      final id = clothingId.trim();
+
+      if (id.isEmpty) {
+        continue;
+      }
+
+      final reference = _firestore.collection("clothes").doc(id);
+
+      batch.update(reference, {
+        "timesUsed": FieldValue.increment(1),
+        "lastWornAt": FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> markOutfitPlanAsWorn(String planId) async {
+    await _firestore.collection("outfitPlans").doc(planId).update({
+      "isWorn": true,
+      "wornAt": FieldValue.serverTimestamp(),
+      "updatedAt": FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> saveWardrobeAnalysis({
+    required String uid,
+    required WardrobeGapAnalysisResult result,
+  }) async {
+    await _firestore.collection("wardrobeAnalyses").doc(uid).set({
+      "uid": uid,
+      ...result.toMap(),
+      "updatedAt": FieldValue.serverTimestamp(),
     });
   }
 
@@ -129,5 +175,61 @@ class FirestoreService {
 
   Future<void> deleteSavedOutfit(String documentId) async {
     await _firestore.collection("savedOutfits").doc(documentId).delete();
+  }
+
+  Future<String> createStyleChatSession(StyleChatSession session) async {
+    final document = await _firestore
+        .collection("styleChatSessions")
+        .add(session.toMap());
+
+    return document.id;
+  }
+
+  Future<void> updateStyleChatSession(StyleChatSession session) async {
+    if (session.id.trim().isEmpty) {
+      throw Exception("Güncellenecek sohbet oturumunun ID değeri boş olamaz.");
+    }
+
+    await _firestore.collection("styleChatSessions").doc(session.id).update({
+      "title": session.title,
+      "messages": session.messages.map((message) => message.toMap()).toList(),
+      "updatedAt": Timestamp.fromDate(session.updatedAt),
+    });
+  }
+
+  Stream<List<StyleChatSession>> getStyleChatSessions(String uid) {
+    return _firestore
+        .collection("styleChatSessions")
+        .where("uid", isEqualTo: uid)
+        .orderBy("updatedAt", descending: true)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.map((document) {
+            return StyleChatSession.fromMap(document.data(), document.id);
+          }).toList();
+        });
+  }
+
+  Future<void> deleteStyleChatSession(String documentId) async {
+    await _firestore.collection("styleChatSessions").doc(documentId).delete();
+  }
+
+  Future<WardrobeGapAnalysisResult?> getWardrobeAnalysis(String uid) async {
+    final document = await _firestore
+        .collection("wardrobeAnalyses")
+        .doc(uid)
+        .get();
+
+    if (!document.exists) {
+      return null;
+    }
+
+    final data = document.data();
+
+    if (data == null) {
+      return null;
+    }
+
+    return WardrobeGapAnalysisResult.fromMap(data);
   }
 }

@@ -53,11 +53,22 @@ class StyleChatMessage {
       "role": role.name,
       "text": text,
       "createdAt": createdAt.toIso8601String(),
+      "assistantResult": assistantResult?.toMap(),
     };
   }
 
   factory StyleChatMessage.fromMap(Map<String, dynamic> map) {
     final roleText = map["role"]?.toString();
+
+    final rawAssistantResult = map["assistantResult"];
+
+    StyleAssistantResult? assistantResult;
+
+    if (rawAssistantResult is Map) {
+      assistantResult = StyleAssistantResult.fromMap(
+        Map<String, dynamic>.from(rawAssistantResult),
+      );
+    }
 
     return StyleChatMessage(
       id: map["id"]?.toString() ?? "",
@@ -68,6 +79,7 @@ class StyleChatMessage {
       createdAt:
           DateTime.tryParse(map["createdAt"]?.toString() ?? "") ??
           DateTime.now(),
+      assistantResult: assistantResult,
     );
   }
 }

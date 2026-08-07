@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import 'add_clothing_screen.dart';
+import '../outfits/saved_outfits_screen.dart';
+import 'clothing_detail_screen.dart';
+
 import '../../models/clothing_item.dart';
+
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
-import 'add_clothing_screen.dart';
-import 'clothing_detail_screen.dart';
-import '../outfits/saved_outfits_screen.dart';
 
 class WardrobeScreen extends StatefulWidget {
   const WardrobeScreen({super.key});

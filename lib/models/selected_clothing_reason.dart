@@ -7,6 +7,10 @@ class SelectedClothingReason {
     required this.reason,
   });
 
+  Map<String, dynamic> toMap() {
+    return {'clothingId': clothingId, 'reason': reason};
+  }
+
   factory SelectedClothingReason.fromMap(Map<String, dynamic> map) {
     return SelectedClothingReason(
       clothingId: map['clothingId']?.toString().trim() ?? '',

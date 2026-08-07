@@ -12,6 +12,8 @@ import '../../models/ai_outfit_result.dart';
 import '../../models/outfit_plan.dart';
 import '../../models/weather_info.dart';
 import '../../models/wardrobe_analysis.dart';
+import '../../models/wardrobe_gap_analysis_result.dart';
+import '../../models/wardrobe_memory.dart';
 
 import '../../services/firestore_service.dart';
 import '../../services/gemini_service.dart';
@@ -19,6 +21,7 @@ import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
 import '../../services/weather_service.dart';
 import '../../services/wardrobe_analysis_service.dart';
+import '../../services/wardrobe_memory_service.dart';
 
 import '../analysis/wardrobe_analysis_screen.dart';
 
@@ -42,6 +45,14 @@ class _HomeScreenState extends State<HomeScreen> {
   final WeatherService _weatherService = WeatherService();
   final WardrobeAnalysisService _wardrobeAnalysisService =
       WardrobeAnalysisService();
+
+  final WardrobeMemoryService _wardrobeMemoryService = WardrobeMemoryService();
+
+  WardrobeGapAnalysisResult? _gapAnalysisResult;
+
+  bool _isGapAnalysisLoading = false;
+
+  bool _hasLoadedSavedAnalysis = false;
 
   bool _isWardrobeAiLoading = false;
 
@@ -647,6 +658,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildWardrobeAnalysisCard(
     BuildContext context,
     WardrobeAnalysis analysis,
+    List<ClothingItem> clothes,
+    String uid,
   ) {
     final Color scoreColor;
 
@@ -659,6 +672,10 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       scoreColor = Colors.red;
     }
+
+    final aiResult = _gapAnalysisResult;
+
+    final bool isOutdated = aiResult != null && _isGapAnalysisOutdated(clothes);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -687,7 +704,7 @@ class _HomeScreenState extends State<HomeScreen> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  "Dolap Analizi",
+                  "Gardırop Analizi",
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -749,17 +766,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+
                     const SizedBox(height: 6),
+
                     Text(
                       "${analysis.totalClothes} kıyafet • "
-                      "${analysis.unusedClothesCount} kullanılmamış",
+                      "${analysis.favoriteCount} favori",
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
+
                     const SizedBox(height: 4),
+
                     Text(
+                      "${analysis.unusedClothesCount} kullanılmamış • "
                       "En sık renk: ${analysis.mostCommonColor}",
                       style: const TextStyle(
                         color: Colors.white70,
@@ -773,6 +795,105 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
           const SizedBox(height: 18),
+
+          if (aiResult != null && aiResult.summary.trim().isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: Colors.white,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      aiResult.summary,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        height: 1.4,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    color: Colors.white70,
+                    size: 19,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "AI gardırop değerlendirmesi henüz oluşturulmadı.",
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          if (isOutdated) ...[
+            const SizedBox(height: 12),
+
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orangeAccent),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Gardırobun bu analizden sonra değişti. "
+                      "AI analizini yenilemen önerilir.",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 14),
 
           if (analysis.strengths.isNotEmpty)
             _buildAnalysisMessage(
@@ -788,7 +909,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
 
-          if (analysis.recommendations.isNotEmpty) ...[
+          if (aiResult != null && aiResult.recommendations.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildAnalysisMessage(
+              icon: Icons.auto_awesome_rounded,
+              text: aiResult.recommendations.first,
+            ),
+          ] else if (analysis.recommendations.isNotEmpty) ...[
             const SizedBox(height: 8),
             _buildAnalysisMessage(
               icon: Icons.lightbulb_outline_rounded,
@@ -797,6 +924,43 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
 
           const SizedBox(height: 16),
+
+          if (aiResult == null || isOutdated) ...[
+            SizedBox(
+              height: 48,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white54),
+                ),
+                onPressed: _isGapAnalysisLoading
+                    ? null
+                    : () {
+                        _generateGapAnalysis(uid: uid, clothes: clothes);
+                      },
+                icon: _isGapAnalysisLoading
+                    ? const SizedBox(
+                        width: 19,
+                        height: 19,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.3,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.auto_awesome_rounded),
+                label: Text(
+                  _isGapAnalysisLoading
+                      ? "AI analiz ediyor..."
+                      : aiResult == null
+                      ? "AI Analizi Oluştur"
+                      : "AI Analizini Yenile",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+          ],
 
           SizedBox(
             height: 48,
@@ -809,7 +973,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => WardrobeAnalysisScreen(analysis: analysis),
+                    builder: (_) => WardrobeAnalysisScreen(
+                      analysis: analysis,
+                      aiAnalysis: _gapAnalysisResult,
+                      clothes: clothes,
+                    ),
                   ),
                 );
               },
@@ -929,9 +1097,159 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _loadSavedGapAnalysis(String uid) async {
+    try {
+      final result = await _firestoreService.getWardrobeAnalysis(uid);
+
+      if (!mounted || result == null) {
+        return;
+      }
+
+      setState(() {
+        _gapAnalysisResult = result;
+      });
+    } catch (e) {
+      debugPrint("Kayıtlı gardırop analizi yüklenemedi: $e");
+    }
+  }
+
+  Future<void> _generateGapAnalysis({
+    required String uid,
+    required List<ClothingItem> clothes,
+  }) async {
+    if (_isGapAnalysisLoading) {
+      return;
+    }
+
+    if (clothes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Gardırop analizi için önce kıyafet eklemelisin."),
+        ),
+      );
+
+      return;
+    }
+
+    setState(() {
+      _isGapAnalysisLoading = true;
+    });
+
+    try {
+      final WardrobeMemory wardrobeMemory = _wardrobeMemoryService.buildMemory(
+        uid: uid,
+        clothes: clothes,
+      );
+
+      final String wardrobeSignature = _wardrobeMemoryService
+          .buildWardrobeSignature(clothes);
+
+      final WardrobeGapAnalysisResult aiResult = await _geminiService
+          .analyzeWardrobeGaps(
+            clothes: clothes,
+            wardrobeMemory: wardrobeMemory,
+          );
+
+      final WardrobeGapAnalysisResult result = WardrobeGapAnalysisResult(
+        wardrobeScore: aiResult.wardrobeScore,
+        strengths: aiResult.strengths,
+        missingCategories: aiResult.missingCategories,
+        missingColors: aiResult.missingColors,
+        overrepresentedItems: aiResult.overrepresentedItems,
+        recommendations: aiResult.recommendations,
+        summary: aiResult.summary,
+        wardrobeSignature: wardrobeSignature,
+      );
+
+      await _firestoreService.saveWardrobeAnalysis(uid: uid, result: result);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _gapAnalysisResult = result;
+      });
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "AI gardırop analizi yenilendi.",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          content: const Text(
+            "AI gardırop analizi oluşturulamadı.",
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGapAnalysisLoading = false;
+        });
+      }
+    }
+  }
+
+  bool _isGapAnalysisOutdated(List<ClothingItem> clothes) {
+    final result = _gapAnalysisResult;
+
+    if (result == null) {
+      return false;
+    }
+
+    if (result.wardrobeSignature.trim().isEmpty) {
+      return true;
+    }
+
+    final currentSignature = _wardrobeMemoryService.buildWardrobeSignature(
+      clothes,
+    );
+
+    return currentSignature != result.wardrobeSignature;
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
+
+    if (user != null && !_hasLoadedSavedAnalysis) {
+      _hasLoadedSavedAnalysis = true;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadSavedGapAnalysis(user.uid);
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -1026,7 +1344,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
                         children: [
-                          _buildWardrobeAnalysisCard(context, wardrobeAnalysis),
+                          _buildWardrobeAnalysisCard(
+                            context,
+                            wardrobeAnalysis,
+                            allClothes,
+                            user.uid,
+                          ),
 
                           const SizedBox(height: 4),
 
