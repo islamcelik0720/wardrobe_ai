@@ -907,6 +907,15 @@ ${wardrobeMemory.mostUsedColor}
 En çok kullanılan kategori:
 ${wardrobeMemory.mostUsedCategory}
 
+Tercih edilen renkler:
+${wardrobeMemory.preferredColors.isEmpty ? 'Yok' : wardrobeMemory.preferredColors.join(', ')}
+
+Tercih edilen kategoriler:
+${wardrobeMemory.preferredCategories.isEmpty ? 'Yok' : wardrobeMemory.preferredCategories.join(', ')}
+
+Aşırı tekrar edilmemesi gereken kıyafet ID'leri:
+${wardrobeMemory.avoidOverusingClothingIds.isEmpty ? 'Yok' : wardrobeMemory.avoidOverusingClothingIds.join(', ')}
+
 Favori kıyafet ID'leri:
 ${wardrobeMemory.favoriteClothingIds.isEmpty ? 'Yok' : wardrobeMemory.favoriteClothingIds.join(', ')}
 
@@ -983,6 +992,15 @@ Kurallar:
 - Gardıropta yeterli farklı parça yoksa aynı parçayı tekrar kullanabileceğini açıkça belirt.
 - Kullanıcı yalnızca belirli bir parçanın alternatifini isterse diğer uygun parçaları mümkün olduğunca koru ve sadece istenen kategoriyi değiştir.
 - Alternatif kombinlerde selectedClothingIds alanı yeni seçilen gerçek kıyafet ID'lerini içersin.
+- preferredColors ve preferredCategories kullanıcının gerçek kullanım alışkanlıklarını temsil eder; bunları kişiselleştirme için dikkate al.
+- Ancak kullanıcının tercihlerini körü körüne tekrar etme; gardırop çeşitliliğini koru.
+- avoidOverusingClothingIds içindeki kıyafetleri mümkün olduğunca sürekli tekrar önerme.
+- Bu kıyafetler hava, etkinlik veya kullanıcı isteği açısından en iyi seçenekse yine kullanılabilir.
+- Kullanıcının sevdiği tarz ile az kullanılan uygun parçalar arasında denge kur.
+- memoryNote alanında gardırop hafızasının seçimi nasıl etkilediğini açıkla.
+- preferredColors, preferredCategories, avoidOverusingClothingIds, sık kullanılanlar, az kullanılanlar veya uzun süredir giyilmeyenler öneriyi gerçekten etkilediyse bunu belirt.
+- Hafıza bu cevapta anlamlı bir rol oynamadıysa memoryNote alanını boş string olarak döndür.
+- memoryNote kısa olsun; en fazla 1-2 cümle.
 ''';
 
     final List<Map<String, dynamic>> contents = [];
@@ -1053,6 +1071,12 @@ $selectedIds
                     'type': 'string',
                     'description':
                         'Kullanıcıya verilecek kısa ve doğal Türkçe stil cevabı.',
+                  },
+
+                  'memoryNote': {
+                    'type': 'string',
+                    'description':
+                        'Gardırop hafızasının bu öneriyi nasıl etkilediğini kısa ve doğal Türkçe ile açıkla. Hafıza etkili olmadıysa boş string döndür.',
                   },
 
                   'shouldShowScore': {
@@ -1139,6 +1163,7 @@ $selectedIds
 
                 'required': [
                   'response',
+                  'memoryNote',
                   'shouldShowScore',
                   'outfitScore',
                   'colorScore',
@@ -1249,6 +1274,7 @@ $selectedIds
 
     return StyleAssistantResult(
       response: result.response,
+      memoryNote: result.memoryNote,
       shouldShowScore: result.shouldShowScore,
       outfitScore: result.outfitScore,
       colorScore: result.colorScore,

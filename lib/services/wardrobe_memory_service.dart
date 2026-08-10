@@ -18,6 +18,9 @@ class WardrobeMemoryService {
         totalClothes: 0,
         totalUsage: 0,
         updatedAt: DateTime.now(),
+        preferredColors: const [],
+        preferredCategories: const [],
+        avoidOverusingClothingIds: const [],
       );
     }
 
@@ -35,6 +38,26 @@ class WardrobeMemoryService {
     final sortedByUsage = List<ClothingItem>.from(clothes)
       ..sort((a, b) => b.timesUsed.compareTo(a.timesUsed));
 
+    final usedClothes = clothes.where((item) => item.timesUsed > 0).toList();
+
+    final double averageUsage = usedClothes.isEmpty
+        ? 0
+        : usedClothes.fold<int>(0, (sum, item) => sum + item.timesUsed) /
+              usedClothes.length;
+
+    final avoidOverusingClothingIds = sortedByUsage
+        .where((item) {
+          if (item.timesUsed < 3) {
+            return false;
+          }
+
+          return item.timesUsed >= averageUsage * 1.5;
+        })
+        .take(5)
+        .map((item) => item.id)
+        .where((id) => id.trim().isNotEmpty)
+        .toList();
+
     final frequentlyUsedIds = sortedByUsage
         .where((item) => item.timesUsed > 0)
         .take(5)
@@ -48,6 +71,7 @@ class WardrobeMemoryService {
         .where((id) => id.trim().isNotEmpty)
         .take(5)
         .toList();
+
     final now = DateTime.now();
 
     final longUnusedIds = clothes
@@ -94,6 +118,24 @@ class WardrobeMemoryService {
       }
     }
 
+    final sortedColors = colorUsage.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final sortedCategories = categoryUsage.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final preferredColors = sortedColors
+        .where((entry) => entry.value > 0)
+        .take(3)
+        .map((entry) => entry.key)
+        .toList();
+
+    final preferredCategories = sortedCategories
+        .where((entry) => entry.value > 0)
+        .take(3)
+        .map((entry) => entry.key)
+        .toList();
+
     return WardrobeMemory(
       uid: uid,
       favoriteClothingIds: favoriteIds,
@@ -105,6 +147,9 @@ class WardrobeMemoryService {
       totalClothes: clothes.length,
       totalUsage: totalUsage,
       updatedAt: DateTime.now(),
+      preferredColors: preferredColors,
+      preferredCategories: preferredCategories,
+      avoidOverusingClothingIds: avoidOverusingClothingIds,
     );
   }
 

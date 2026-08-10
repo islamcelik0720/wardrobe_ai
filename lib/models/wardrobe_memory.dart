@@ -12,6 +12,10 @@ class WardrobeMemory {
   final int totalUsage;
   final List<String> longUnusedClothingIds;
 
+  final List<String> preferredColors;
+  final List<String> preferredCategories;
+  final List<String> avoidOverusingClothingIds;
+
   final DateTime updatedAt;
 
   const WardrobeMemory({
@@ -25,6 +29,9 @@ class WardrobeMemory {
     required this.totalUsage,
     required this.updatedAt,
     required this.longUnusedClothingIds,
+    required this.preferredColors,
+    required this.preferredCategories,
+    required this.avoidOverusingClothingIds,
   });
 
   Map<String, dynamic> toMap() {
@@ -39,6 +46,9 @@ class WardrobeMemory {
       'totalUsage': totalUsage,
       'updatedAt': updatedAt.toIso8601String(),
       'longUnusedClothingIds': longUnusedClothingIds,
+      'preferredColors': preferredColors,
+      'preferredCategories': preferredCategories,
+      'avoidOverusingClothingIds': avoidOverusingClothingIds,
     };
   }
 
@@ -84,6 +94,27 @@ class WardrobeMemory {
       updatedAt:
           DateTime.tryParse(map['updatedAt']?.toString() ?? '') ??
           DateTime.now(),
+      preferredColors: map['preferredColors'] is List
+          ? List<String>.from(
+              (map['preferredColors'] as List).map((item) => item.toString()),
+            )
+          : [],
+
+      preferredCategories: map['preferredCategories'] is List
+          ? List<String>.from(
+              (map['preferredCategories'] as List).map(
+                (item) => item.toString(),
+              ),
+            )
+          : [],
+
+      avoidOverusingClothingIds: map['avoidOverusingClothingIds'] is List
+          ? List<String>.from(
+              (map['avoidOverusingClothingIds'] as List).map(
+                (item) => item.toString(),
+              ),
+            )
+          : [],
     );
   }
 }

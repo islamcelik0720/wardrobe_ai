@@ -11,6 +11,7 @@ class StyleAssistantResult {
   final bool shouldShowScore;
   final List<String> selectedClothingIds;
   final List<SelectedClothingReason> selectedClothingReasons;
+  final String memoryNote;
 
   const StyleAssistantResult({
     required this.response,
@@ -23,6 +24,7 @@ class StyleAssistantResult {
     required this.shouldShowScore,
     required this.selectedClothingIds,
     required this.selectedClothingReasons,
+    required this.memoryNote,
   });
 
   Map<String, dynamic> toMap() {
@@ -39,6 +41,7 @@ class StyleAssistantResult {
       'selectedClothingReasons': selectedClothingReasons
           .map((item) => item.toMap())
           .toList(),
+      'memoryNote': memoryNote,
     };
   }
 
@@ -54,6 +57,7 @@ class StyleAssistantResult {
       selectedClothingIds: _stringList(map['selectedClothingIds']),
       shouldShowScore: map['shouldShowScore'] == true,
       selectedClothingReasons: _reasonList(map['selectedClothingReasons']),
+      memoryNote: map['memoryNote']?.toString().trim() ?? '',
     );
   }
 
