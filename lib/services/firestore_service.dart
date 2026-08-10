@@ -232,4 +232,62 @@ class FirestoreService {
 
     return WardrobeGapAnalysisResult.fromMap(data);
   }
+
+  Future<void> addToDonationList({
+    required String uid,
+    required ClothingItem item,
+  }) async {
+    await _firestore.collection("donationItems").doc(item.id).set({
+      "uid": uid,
+      "clothingId": item.id,
+      "category": item.category,
+      "color": item.color,
+      "imageUrl": item.imageUrl,
+      "timesUsed": item.timesUsed,
+      "lastWornAt": item.lastWornAt == null
+          ? null
+          : Timestamp.fromDate(item.lastWornAt!),
+      "status": "planned",
+      "createdAt": FieldValue.serverTimestamp(),
+      "updatedAt": FieldValue.serverTimestamp(),
+    });
+  }
+
+  Stream<List<Map<String, dynamic>>> getDonationItems(String uid) {
+    return _firestore
+        .collection("donationItems")
+        .where("uid", isEqualTo: uid)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.map((document) {
+            return {"id": document.id, ...document.data()};
+          }).toList();
+        });
+  }
+
+  Future<void> markDonationAsCompleted(String clothingId) async {
+    final batch = _firestore.batch();
+
+    final clothingRef = _firestore.collection("clothes").doc(clothingId);
+
+    final donationRef = _firestore.collection("donationItems").doc(clothingId);
+
+    batch.delete(clothingRef);
+    batch.delete(donationRef);
+
+    await batch.commit();
+  }
+
+  Future<void> removeFromDonationList(String clothingId) async {
+    await _firestore.collection("donationItems").doc(clothingId).delete();
+  }
+
+  Future<bool> isInDonationList(String clothingId) async {
+    final document = await _firestore
+        .collection("donationItems")
+        .doc(clothingId)
+        .get();
+
+    return document.exists;
+  }
 }

@@ -8,6 +8,7 @@ import '../../models/clothing_item.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
+import 'donation_list_screen.dart';
 
 class WardrobeScreen extends StatefulWidget {
   const WardrobeScreen({super.key});
@@ -316,6 +317,17 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
         title: const Text("Gardırobum"),
         centerTitle: true,
         actions: [
+          IconButton(
+            tooltip: "Bağış Listem",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DonationListScreen()),
+              );
+            },
+            icon: const Icon(Icons.volunteer_activism_outlined),
+          ),
+
           IconButton(
             tooltip: "Kombinlerim",
             onPressed: () {

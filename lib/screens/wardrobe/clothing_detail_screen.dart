@@ -5,6 +5,7 @@ import '../../models/clothing_item.dart';
 import '../../services/firestore_service.dart';
 import '../../services/outfit_suggestion_service.dart';
 import '../../services/gemini_service.dart';
+import '../../services/auth_service.dart';
 
 class ClothingDetailScreen extends StatefulWidget {
   final ClothingItem clothing;
@@ -26,6 +27,9 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
   bool isFavorite = false;
   bool _isFavoriteUpdating = false;
   bool _isUsageUpdating = false;
+  bool _isInDonationList = false;
+  bool _isDonationStatusLoading = true;
+  bool _isDonationUpdating = false;
 
   int _timesUsed = 0;
 
@@ -39,6 +43,7 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
 
     isFavorite = widget.clothing.favorite;
     _timesUsed = widget.clothing.timesUsed;
+    _loadDonationStatus();
 
     _outfitSuggestion = _outfitSuggestionService.generateSuggestion(
       widget.clothing,
@@ -353,6 +358,31 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
     }
   }
 
+  Future<void> _loadDonationStatus() async {
+    try {
+      final result = await _firestoreService.isInDonationList(
+        widget.clothing.id,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isInDonationList = result;
+        _isDonationStatusLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isDonationStatusLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final int styleScore = _calculateStyleScore();
@@ -641,6 +671,126 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
                       ),
               ),
             ),
+
+            const SizedBox(height: 12),
+
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton.icon(
+                onPressed: _isDonationStatusLoading || _isDonationUpdating
+                    ? null
+                    : () async {
+                        final user = AuthService().currentUser;
+
+                        if (user == null) {
+                          return;
+                        }
+
+                        setState(() {
+                          _isDonationUpdating = true;
+                        });
+
+                        try {
+                          if (_isInDonationList) {
+                            await _firestoreService.removeFromDonationList(
+                              widget.clothing.id,
+                            );
+
+                            if (!mounted) {
+                              return;
+                            }
+
+                            setState(() {
+                              _isInDonationList = false;
+                            });
+
+                            ScaffoldMessenger.of(context)
+                              ..hideCurrentSnackBar()
+                              ..showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "Kıyafet bağış listesinden çıkarıldı.",
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                          } else {
+                            await _firestoreService.addToDonationList(
+                              uid: user.uid,
+                              item: widget.clothing,
+                            );
+
+                            if (!mounted) {
+                              return;
+                            }
+
+                            setState(() {
+                              _isInDonationList = true;
+                            });
+
+                            ScaffoldMessenger.of(context)
+                              ..hideCurrentSnackBar()
+                              ..showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "Kıyafet bağış listesine eklendi.",
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                          }
+                        } catch (e) {
+                          if (!mounted) {
+                            return;
+                          }
+
+                          ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  _isInDonationList
+                                      ? "Kıyafet bağış listesinden çıkarılamadı."
+                                      : "Kıyafet bağış listesine eklenemedi.",
+                                ),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                        } finally {
+                          if (mounted) {
+                            setState(() {
+                              _isDonationUpdating = false;
+                            });
+                          }
+                        }
+                      },
+
+                icon: _isDonationStatusLoading || _isDonationUpdating
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      )
+                    : Icon(
+                        _isInDonationList
+                            ? Icons.remove_circle_outline
+                            : Icons.volunteer_activism_outlined,
+                      ),
+
+                label: Text(
+                  _isDonationStatusLoading
+                      ? "Kontrol ediliyor..."
+                      : _isDonationUpdating
+                      ? "İşleniyor..."
+                      : _isInDonationList
+                      ? "Bağış Listesinden Çıkar"
+                      : "Bağış Listesine Ekle",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+
             const SizedBox(height: 16),
 
             Container(
@@ -739,8 +889,6 @@ class _ClothingDetailScreenState extends State<ClothingDetailScreen> {
                 ],
               ),
             ),
-
-            const SizedBox(height: 16),
 
             const SizedBox(height: 16),
 

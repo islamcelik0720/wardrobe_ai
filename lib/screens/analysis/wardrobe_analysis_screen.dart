@@ -3,18 +3,27 @@ import 'package:flutter/material.dart';
 import '../../models/wardrobe_analysis.dart';
 import '../../models/clothing_item.dart';
 import '../../models/wardrobe_gap_analysis_result.dart';
+import '../../models/donation_candidate.dart';
+
+import '../../services/auth_service.dart';
+import '../../services/firestore_service.dart';
+import '../../services/donation_candidate_service.dart';
 
 class WardrobeAnalysisScreen extends StatelessWidget {
   final WardrobeAnalysis analysis;
   final WardrobeGapAnalysisResult? aiAnalysis;
   final List<ClothingItem> clothes;
 
-  const WardrobeAnalysisScreen({
+  WardrobeAnalysisScreen({
     super.key,
     required this.analysis,
     required this.aiAnalysis,
     required this.clothes,
   });
+
+  final DonationCandidateService _donationCandidateService =
+      DonationCandidateService();
+  final FirestoreService _firestoreService = FirestoreService();
 
   Color _scoreColor(int score) {
     if (score >= 85) return Colors.green;
@@ -26,6 +35,9 @@ class WardrobeAnalysisScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scoreColor = _scoreColor(analysis.wardrobeScore);
+
+    final List<DonationCandidate> donationCandidates = _donationCandidateService
+        .findCandidates(clothes);
 
     return Scaffold(
       appBar: AppBar(
@@ -115,6 +127,9 @@ class WardrobeAnalysisScreen extends StatelessWidget {
               const SizedBox(height: 18),
 
               _buildLongUnusedSection(context),
+              const SizedBox(height: 18),
+
+              _buildDonationCandidatesSection(context, donationCandidates),
 
               if (aiAnalysis != null) ...[
                 const SizedBox(height: 18),
@@ -770,6 +785,207 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                                 color: Theme.of(
                                   context,
                                 ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDonationCandidatesSection(
+    BuildContext context,
+    List<DonationCandidate> candidates,
+  ) {
+    final clothesById = {for (final item in clothes) item.id: item};
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.volunteer_activism_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    "Bağış Adayları",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              "Uzun süredir kullanılmayan ve kullanım sıklığı düşük "
+              "parçalar burada öneri olarak gösterilir.",
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            if (candidates.isEmpty)
+              Text(
+                "Şu anda bağış için önerilen bir kıyafet bulunmuyor.",
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              ...candidates.map((candidate) {
+                final item = clothesById[candidate.clothingId];
+
+                if (item == null) {
+                  return const SizedBox.shrink();
+                }
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 58,
+                        height: 58,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: item.imageUrl.trim().isNotEmpty
+                              ? Image.network(
+                                  item.imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    );
+                                  },
+                                )
+                              : Icon(
+                                  Icons.checkroom_rounded,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.category,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const SizedBox(height: 3),
+
+                            Text(
+                              "${item.color} • "
+                              "${candidate.daysSinceLastWorn} gündür giyilmedi",
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            Text(
+                              candidate.reason,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  final user = AuthService().currentUser;
+
+                                  if (user == null) {
+                                    return;
+                                  }
+
+                                  try {
+                                    await _firestoreService.addToDonationList(
+                                      uid: user.uid,
+                                      item: item,
+                                    );
+
+                                    if (!context.mounted) {
+                                      return;
+                                    }
+
+                                    ScaffoldMessenger.of(context)
+                                      ..hideCurrentSnackBar()
+                                      ..showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            "Kıyafet bağış listesine eklendi.",
+                                          ),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                  } catch (e) {
+                                    if (!context.mounted) {
+                                      return;
+                                    }
+
+                                    ScaffoldMessenger.of(context)
+                                      ..hideCurrentSnackBar()
+                                      ..showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            "Kıyafet bağış listesine eklenemedi.",
+                                          ),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.volunteer_activism_outlined,
+                                ),
+                                label: const Text(
+                                  "Bağış Listesine Ekle",
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
                               ),
                             ),
                           ],
