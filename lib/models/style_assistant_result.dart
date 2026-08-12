@@ -12,6 +12,11 @@ class StyleAssistantResult {
   final List<String> selectedClothingIds;
   final List<SelectedClothingReason> selectedClothingReasons;
   final String memoryNote;
+  final String weatherPriority;
+  final String occasionPriority;
+  final String memoryPriority;
+  final String diversityPriority;
+  final List<String> validationWarnings;
 
   const StyleAssistantResult({
     required this.response,
@@ -25,6 +30,11 @@ class StyleAssistantResult {
     required this.selectedClothingIds,
     required this.selectedClothingReasons,
     required this.memoryNote,
+    required this.weatherPriority,
+    required this.occasionPriority,
+    required this.memoryPriority,
+    required this.diversityPriority,
+    required this.validationWarnings,
   });
 
   Map<String, dynamic> toMap() {
@@ -42,6 +52,11 @@ class StyleAssistantResult {
           .map((item) => item.toMap())
           .toList(),
       'memoryNote': memoryNote,
+      'weatherPriority': weatherPriority,
+      'occasionPriority': occasionPriority,
+      'memoryPriority': memoryPriority,
+      'diversityPriority': diversityPriority,
+      'validationWarnings': validationWarnings,
     };
   }
 
@@ -58,6 +73,20 @@ class StyleAssistantResult {
       shouldShowScore: map['shouldShowScore'] == true,
       selectedClothingReasons: _reasonList(map['selectedClothingReasons']),
       memoryNote: map['memoryNote']?.toString().trim() ?? '',
+      weatherPriority: map['weatherPriority']?.toString().trim() ?? 'low',
+
+      occasionPriority: map['occasionPriority']?.toString().trim() ?? 'low',
+
+      memoryPriority: map['memoryPriority']?.toString().trim() ?? 'low',
+
+      diversityPriority: map['diversityPriority']?.toString().trim() ?? 'low',
+      validationWarnings: map['validationWarnings'] is List
+          ? List<String>.from(
+              (map['validationWarnings'] as List).map(
+                (item) => item.toString(),
+              ),
+            )
+          : [],
     );
   }
 

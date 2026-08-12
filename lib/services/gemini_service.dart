@@ -1001,6 +1001,48 @@ Kurallar:
 - preferredColors, preferredCategories, avoidOverusingClothingIds, sık kullanılanlar, az kullanılanlar veya uzun süredir giyilmeyenler öneriyi gerçekten etkilediyse bunu belirt.
 - Hafıza bu cevapta anlamlı bir rol oynamadıysa memoryNote alanını boş string olarak döndür.
 - memoryNote kısa olsun; en fazla 1-2 cümle.
+KOMBİN KARAR ÖNCELİĞİ:
+
+Bir kombin oluştururken aşağıdaki öncelik sırasını kullan:
+
+1. HAVA UYGUNLUĞU
+- Güncel hava durumuna uygun olmayan bir parçayı yalnızca kullanıcının tercih ettiği için seçme.
+- Sıcaklık, yağış, rüzgar ve genel hava koşullarını öncelikli değerlendir.
+- Kullanıcının konumu veya hava verisi yoksa hava konusunda kesin bilgi uydurma.
+
+2. ETKİNLİK / ORTAM UYGUNLUĞU
+- Kullanıcı okul, iş, düğün, spor, günlük kullanım, buluşma gibi bir amaç belirttiyse kombini buna göre oluştur.
+- Etkinliğe uygunluk kişisel tercihten daha yüksek önceliklidir.
+
+3. KOMBİN VE RENK UYUMU
+- Seçilen parçaların kategori, renk, kumaş ve mevsim açısından birlikte kullanılabilir olmasına dikkat et.
+- Sadece az kullanılmış olduğu için uyumsuz bir kıyafeti kombine dahil etme.
+
+4. KULLANICI TERCİHLERİ
+- preferredColors ve preferredCategories kullanıcının gerçek kullanım alışkanlıklarını temsil eder.
+- Uygun olduğunda bu tercihleri kullanarak öneriyi kişiselleştir.
+- Ancak her kombinde aynı renkleri ve kategorileri seçme.
+
+5. GARDIROP ÇEŞİTLİLİĞİ
+- rarelyUsedClothingIds ve longUnusedClothingIds içindeki uygun parçaları değerlendirmeye çalış.
+- Kullanıcının gardırobundaki farklı parçaları kullanmasını teşvik et.
+- Az kullanılan bir parçayı yalnızca kombine gerçekten uygunsa seç.
+
+6. AŞIRI TEKRARDAN KAÇINMA
+- avoidOverusingClothingIds içindeki parçaları mümkün olduğunca tekrar önerme.
+- Ancak bu parçalar hava, etkinlik veya kombin uyumu açısından açıkça en iyi seçenekse kullanılabilir.
+- Bir parçayı sadece aşırı kullanıldığı için kötü veya uygunsuz olarak nitelendirme.
+
+TEMEL PRENSİP:
+Kombin kalitesi ve uygunluğu her zaman gardırop çeşitliliğinden daha önemlidir.
+Kullanıcının alışkanlıklarını dikkate al ancak sürekli aynı parçaları önererek kişiselleştirmeyi tekrara dönüştürme.
+- weatherPriority, occasionPriority, memoryPriority ve diversityPriority alanları yalnızca high, medium veya low olmalı.
+- Bu değerleri gerçek karar sürecine göre belirle; hepsini otomatik olarak high yapma.
+- Kullanıcı etkinlik belirtmediyse occasionPriority genellikle low olmalı.
+- Hava bilgisi karar üzerinde etkili değilse weatherPriority low olabilir.
+- Gardırop hafızası seçimleri gerçekten değiştirdiyse memoryPriority medium veya high olmalı.
+- Az kullanılan veya aşırı tekrar edilen parçalar seçimde etkili olduysa diversityPriority medium veya high olmalı.
+- Kullanıcı "daha tutarlı kombin", "alternatif kombin" veya önceki kombini düzeltme isterse, gardıropta yeterli alternatif varsa selectedClothingIds listesini önceki kombinle tamamen aynı döndürme.
 ''';
 
     final List<Map<String, dynamic>> contents = [];
@@ -1077,6 +1119,39 @@ $selectedIds
                     'type': 'string',
                     'description':
                         'Gardırop hafızasının bu öneriyi nasıl etkilediğini kısa ve doğal Türkçe ile açıkla. Hafıza etkili olmadıysa boş string döndür.',
+                  },
+
+                  'weatherPriority': {
+                    'type': 'string',
+                    'enum': ['high', 'medium', 'low'],
+                    'description':
+                        'Hava durumunun bu kombin kararındaki etkisi. '
+                        'Hava belirleyici ise high, kısmen etkiliyse medium, '
+                        'anlamlı etkisi yoksa low.',
+                  },
+
+                  'occasionPriority': {
+                    'type': 'string',
+                    'enum': ['high', 'medium', 'low'],
+                    'description':
+                        'Etkinlik veya ortam bilgisinin kombin kararındaki etkisi. '
+                        'Kullanıcı belirli bir ortam veya etkinlik söylediyse genellikle high veya medium.',
+                  },
+
+                  'memoryPriority': {
+                    'type': 'string',
+                    'enum': ['high', 'medium', 'low'],
+                    'description':
+                        'Kullanıcının gardırop hafızası ve giyim alışkanlıklarının '
+                        'bu önerideki etkisi.',
+                  },
+
+                  'diversityPriority': {
+                    'type': 'string',
+                    'enum': ['high', 'medium', 'low'],
+                    'description':
+                        'Az kullanılan parçaları değerlendirme ve aşırı tekrar edilen '
+                        'parçalardan kaçınma faktörünün bu önerideki etkisi.',
                   },
 
                   'shouldShowScore': {
@@ -1164,6 +1239,10 @@ $selectedIds
                 'required': [
                   'response',
                   'memoryNote',
+                  'weatherPriority',
+                  'occasionPriority',
+                  'memoryPriority',
+                  'diversityPriority',
                   'shouldShowScore',
                   'outfitScore',
                   'colorScore',
@@ -1267,6 +1346,39 @@ $selectedIds
       return validClothingIds.contains(item.clothingId) &&
           filteredSelectedIds.contains(item.clothingId);
     }).toList();
+    final List<String> validationWarnings = [];
+    // GEÇİCİ TEST KURALI
+
+    if (result.diversityPriority == "high") {
+      final repeatedIds = filteredSelectedIds
+          .where(wardrobeMemory.avoidOverusingClothingIds.contains)
+          .toList();
+
+      if (repeatedIds.isNotEmpty) {
+        validationWarnings.add(
+          "Çeşitlilik yüksek öncelikli olmasına rağmen "
+          "aşırı kullanılan ${repeatedIds.length} parça tekrar seçildi.",
+        );
+      }
+    }
+
+    if (result.memoryPriority == "high" &&
+        wardrobeMemory.preferredColors.isNotEmpty) {
+      final selectedItems = clothes.where((item) {
+        return filteredSelectedIds.contains(item.id);
+      }).toList();
+
+      final matchesPreference = selectedItems.any((item) {
+        return wardrobeMemory.preferredColors.contains(item.color.trim());
+      });
+
+      if (!matchesPreference) {
+        validationWarnings.add(
+          "Hafıza yüksek öncelikli olmasına rağmen "
+          "tercih edilen renklerden hiçbiri kullanılmadı.",
+        );
+      }
+    }
 
     if (result.response.isEmpty) {
       throw Exception('Stil asistanı cevap metni oluşturmadı.');
@@ -1275,6 +1387,10 @@ $selectedIds
     return StyleAssistantResult(
       response: result.response,
       memoryNote: result.memoryNote,
+      weatherPriority: result.weatherPriority,
+      occasionPriority: result.occasionPriority,
+      memoryPriority: result.memoryPriority,
+      diversityPriority: result.diversityPriority,
       shouldShowScore: result.shouldShowScore,
       outfitScore: result.outfitScore,
       colorScore: result.colorScore,
@@ -1288,6 +1404,7 @@ $selectedIds
       selectedClothingReasons: result.shouldShowScore
           ? filteredReasons
           : const [],
+      validationWarnings: validationWarnings,
     );
   }
 

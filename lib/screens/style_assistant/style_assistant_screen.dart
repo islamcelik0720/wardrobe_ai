@@ -203,6 +203,51 @@ Aynı kullanım amacı ve hava koşullarına uygun, farklı gerçek gardırop pa
     await _sendMessage();
   }
 
+  Future<void> _requestMoreConsistentOutfit(StyleAssistantResult result) async {
+    if (_isLoading) {
+      return;
+    }
+
+    if (result.selectedClothingIds.isEmpty) {
+      return;
+    }
+
+    final selectedIds = result.selectedClothingIds.join(", ");
+
+    final warnings = result.validationWarnings.join("\n- ");
+
+    _messageController.text =
+        '''
+Az önce oluşturduğun kombini tekrar değerlendir.
+
+Önceki seçilen kıyafet ID'leri:
+$selectedIds
+
+Uygulamanın karar kontrolü şu tutarsızlıkları tespit etti:
+- $warnings
+
+Yeni bir kombin oluştururken bu tutarsızlıkları düzelt.
+
+Kurallar:
+- Hava ve etkinlik uygunluğunu koru.
+- Kombin ve renk uyumunu bozma.
+- Önceki kombini AYNI şekilde tekrar etme.
+- Mümkünse en az 1 kıyafeti mutlaka değiştir.
+- Eğer gardıropta yeterli alternatif varsa önceki kombindeki tüm parçaları tekrar kullanma.
+- Çeşitlilik yüksek öncelikliyse avoidOverusingClothingIds içindeki parçaları kullanma.
+- Hafıza yüksek öncelikliyse kullanıcı tercihlerini gerçekten dikkate al.
+- Önceki kombindeki sorunlu parçaları daha uygun alternatiflerle değiştir.
+- Yeni selectedClothingIds listesi önceki selectedClothingIds listesiyle tamamen aynı olmasın.
+- Sadece gardırobumda gerçekten bulunan kıyafet ID'lerini kullan.
+''';
+
+    _messageController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _messageController.text.length),
+    );
+
+    await _sendMessage();
+  }
+
   Future<void> _requestPartialAlternative({
     required StyleAssistantResult result,
     required String target,
@@ -1008,6 +1053,124 @@ Hava durumu ve kullanım amacına uygunluğu koru.
               ),
             ),
           ],
+          const SizedBox(height: 12),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildPriorityChip(
+                context: context,
+                icon: Icons.cloud_outlined,
+                label: "Hava",
+                value: result.weatherPriority,
+              ),
+              _buildPriorityChip(
+                context: context,
+                icon: Icons.event_outlined,
+                label: "Etkinlik",
+                value: result.occasionPriority,
+              ),
+              _buildPriorityChip(
+                context: context,
+                icon: Icons.psychology_alt_outlined,
+                label: "Hafıza",
+                value: result.memoryPriority,
+              ),
+              _buildPriorityChip(
+                context: context,
+                icon: Icons.shuffle_rounded,
+                label: "Çeşitlilik",
+                value: result.diversityPriority,
+              ),
+            ],
+          ),
+
+          if (result.validationWarnings.isNotEmpty) ...[
+            const SizedBox(height: 12),
+
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.orange.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.fact_check_outlined,
+                        color: Colors.orange,
+                        size: 20,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "AI Karar Kontrolü",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  ...result.validationWarnings.map(
+                    (warning) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            size: 16,
+                            color: Colors.orange,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              warning,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: OutlinedButton.icon(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              _requestMoreConsistentOutfit(result);
+                            },
+                      icon: const Icon(Icons.auto_fix_high_rounded),
+                      label: const Text(
+                        "Daha Tutarlı Kombin Oluştur",
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           const SizedBox(height: 14),
 
@@ -1114,6 +1277,48 @@ Hava durumu ve kullanım amacına uygunluğu koru.
                       },
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriorityChip({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    String translatedValue;
+
+    switch (value.toLowerCase().trim()) {
+      case "high":
+        translatedValue = "Yüksek";
+        break;
+
+      case "medium":
+        translatedValue = "Orta";
+        break;
+
+      default:
+        translatedValue = "Düşük";
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 5),
+          Text(
+            "$label: $translatedValue",
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ],
       ),
