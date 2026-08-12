@@ -13,6 +13,7 @@ import '../models/clothing_analysis_result.dart';
 import '../models/style_chat_message.dart';
 import '../models/style_assistant_result.dart';
 import '../models/wardrobe_gap_analysis_result.dart';
+import '../models/shopping_suggestion.dart';
 
 class GeminiService {
   static const String _modelName = 'gemini-3.5-flash-lite';
@@ -1630,5 +1631,255 @@ Görevin:
     }
 
     return WardrobeGapAnalysisResult.fromMap(decodedResult);
+  }
+
+  Future<List<ShoppingSuggestion>> generateShoppingSuggestions({
+    required List<ClothingItem> clothes,
+    required WardrobeMemory wardrobeMemory,
+    WardrobeGapAnalysisResult? gapAnalysis,
+  }) async {
+    if (clothes.isEmpty) {
+      return [];
+    }
+
+    final clothesText = clothes
+        .map((item) {
+          return '''
+ID: ${item.id}
+Kategori: ${item.category}
+Renk: ${item.color}
+Kumaş: ${item.fabric}
+Mevsim: ${item.season}
+Favori: ${item.favorite ? 'Evet' : 'Hayır'}
+Kullanım sayısı: ${item.timesUsed}
+Son kullanım: ${item.lastWornAt?.toIso8601String() ?? 'Bilinmiyor'}
+''';
+        })
+        .join('\n');
+
+    final memoryText =
+        '''
+Toplam kıyafet: ${wardrobeMemory.totalClothes}
+Toplam kullanım: ${wardrobeMemory.totalUsage}
+
+En çok kullanılan renk:
+${wardrobeMemory.mostUsedColor}
+
+En çok kullanılan kategori:
+${wardrobeMemory.mostUsedCategory}
+
+Tercih edilen renkler:
+${wardrobeMemory.preferredColors.isEmpty ? 'Yok' : wardrobeMemory.preferredColors.join(', ')}
+
+Tercih edilen kategoriler:
+${wardrobeMemory.preferredCategories.isEmpty ? 'Yok' : wardrobeMemory.preferredCategories.join(', ')}
+
+Sık kullanılan kıyafet ID'leri:
+${wardrobeMemory.frequentlyUsedClothingIds.isEmpty ? 'Yok' : wardrobeMemory.frequentlyUsedClothingIds.join(', ')}
+
+Hiç kullanılmayan kıyafet ID'leri:
+${wardrobeMemory.rarelyUsedClothingIds.isEmpty ? 'Yok' : wardrobeMemory.rarelyUsedClothingIds.join(', ')}
+
+Uzun süredir kullanılmayan kıyafet ID'leri:
+${wardrobeMemory.longUnusedClothingIds.isEmpty ? 'Yok' : wardrobeMemory.longUnusedClothingIds.join(', ')}
+
+Aşırı tekrar edilmemesi gereken kıyafet ID'leri:
+${wardrobeMemory.avoidOverusingClothingIds.isEmpty ? 'Yok' : wardrobeMemory.avoidOverusingClothingIds.join(', ')}
+''';
+
+    final gapText = gapAnalysis == null
+        ? 'Daha önce oluşturulmuş AI gardırop analizi yok.'
+        : '''
+Eksik kategoriler:
+${gapAnalysis.missingCategories.isEmpty ? 'Yok' : gapAnalysis.missingCategories.join(', ')}
+
+Eksik renkler:
+${gapAnalysis.missingColors.isEmpty ? 'Yok' : gapAnalysis.missingColors.join(', ')}
+
+Fazla tekrar edenler:
+${gapAnalysis.overrepresentedItems.isEmpty ? 'Yok' : gapAnalysis.overrepresentedItems.join(', ')}
+
+AI gardırop özeti:
+${gapAnalysis.summary}
+''';
+
+    final prompt =
+        '''
+Sen WardrobeAI uygulamasında çalışan akıllı gardırop ve alışveriş asistanısın.
+
+KULLANICININ GERÇEK GARDIROBU:
+
+$clothesText
+
+GARDIROP HAFIZASI:
+
+$memoryText
+
+MEVCUT AI GARDIROP ANALİZİ:
+
+$gapText
+
+Görevin kullanıcının gardırobunda gerçekten eksik olan parçaları belirlemek.
+
+ÇOK ÖNEMLİ KURALLAR:
+
+- Kullanıcıyı gereksiz alışverişe yönlendirme.
+- Gardıropta zaten yeterince bulunan bir kategori veya renkten yeni ürün önermemeye çalış.
+- Fazla tekrar eden ürünleri dikkate al.
+- Kullanıcının hiç kullanmadığı çok sayıda ürün varsa yeni ürün almaktan önce mevcut parçaları değerlendirmeyi öner.
+- Bir kategori gerçekten eksik değilse sırf öneri üretmek için eksikmiş gibi davranma.
+- Önerilen ürün mevcut gardıroptaki mümkün olduğunca çok parçayla kombinlenebilir olmalı.
+- Kullanıcının preferredColors bilgisini dikkate al ancak sürekli aynı renkleri önermek zorunda değilsin.
+- Eksik renk ve kategori bilgisini birlikte değerlendir.
+- En fazla 5 öneri üret.
+- Gerçek bir ihtiyaç yoksa boş suggestions listesi döndürebilirsin.
+- priority yalnızca high, medium veya low olmalı.
+- actuallyNeeded yalnızca gerçek bir gardırop ihtiyacı varsa true olmalı.
+- reason kullanıcıya neden bu önerinin yapıldığını açık ve doğal Türkçe ile anlatmalı.
+- Fiyat, marka veya mağaza uydurma.
+''';
+
+    final response = await http
+        .post(
+          _endpoint,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': _apiKey,
+          },
+          body: jsonEncode({
+            'contents': [
+              {
+                'role': 'user',
+                'parts': [
+                  {'text': prompt},
+                ],
+              },
+            ],
+            'generationConfig': {
+              'temperature': 0.25,
+              'maxOutputTokens': 1200,
+              'responseMimeType': 'application/json',
+              'responseSchema': {
+                'type': 'object',
+                'properties': {
+                  'suggestions': {
+                    'type': 'array',
+                    'maxItems': 5,
+                    'items': {
+                      'type': 'object',
+                      'properties': {
+                        'title': {'type': 'string'},
+                        'reason': {'type': 'string'},
+                        'category': {'type': 'string'},
+                        'suggestedColor': {'type': 'string'},
+                        'priority': {
+                          'type': 'string',
+                          'enum': ['high', 'medium', 'low'],
+                        },
+                        'actuallyNeeded': {'type': 'boolean'},
+                      },
+                      'required': [
+                        'title',
+                        'reason',
+                        'category',
+                        'suggestedColor',
+                        'priority',
+                        'actuallyNeeded',
+                      ],
+                    },
+                  },
+                },
+                'required': ['suggestions'],
+              },
+            },
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+
+    final dynamic decodedBody;
+
+    try {
+      decodedBody = jsonDecode(response.body);
+    } catch (_) {
+      throw Exception(
+        'Alışveriş asistanı geçersiz bir sunucu yanıtı döndürdü.',
+      );
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String message = 'Alışveriş önerileri oluşturulamadı.';
+
+      if (decodedBody is Map<String, dynamic>) {
+        final error = decodedBody['error'];
+
+        if (error is Map<String, dynamic>) {
+          message = error['message']?.toString() ?? message;
+        }
+      }
+
+      throw Exception('$message HTTP ${response.statusCode}');
+    }
+
+    if (decodedBody is! Map<String, dynamic>) {
+      throw Exception('Alışveriş asistanı yanıt biçimi geçersiz.');
+    }
+
+    final candidates = decodedBody['candidates'];
+
+    if (candidates is! List || candidates.isEmpty) {
+      throw Exception('Alışveriş asistanı cevap üretmedi.');
+    }
+
+    final firstCandidate = candidates.first;
+
+    if (firstCandidate is! Map<String, dynamic>) {
+      throw Exception('Alışveriş asistanı aday yanıtı geçersiz.');
+    }
+
+    final content = firstCandidate['content'];
+
+    if (content is! Map<String, dynamic>) {
+      throw Exception('Alışveriş asistanı içerik döndürmedi.');
+    }
+
+    final parts = content['parts'];
+
+    if (parts is! List || parts.isEmpty) {
+      throw Exception('Alışveriş asistanı metin döndürmedi.');
+    }
+
+    final jsonText = parts
+        .whereType<Map<String, dynamic>>()
+        .map((part) => part['text']?.toString() ?? '')
+        .join('\n')
+        .trim();
+
+    if (jsonText.isEmpty) {
+      throw Exception('Alışveriş asistanı boş cevap döndürdü.');
+    }
+
+    final dynamic decodedResult;
+
+    try {
+      decodedResult = jsonDecode(jsonText);
+    } catch (_) {
+      throw Exception('Alışveriş asistanı geçerli JSON döndürmedi.');
+    }
+
+    if (decodedResult is! Map<String, dynamic>) {
+      throw Exception('Alışveriş asistanı beklenen yapıda değil.');
+    }
+
+    final suggestions = decodedResult['suggestions'];
+
+    if (suggestions is! List) {
+      return [];
+    }
+
+    return suggestions
+        .whereType<Map<String, dynamic>>()
+        .map(ShoppingSuggestion.fromMap)
+        .where((suggestion) => suggestion.actuallyNeeded)
+        .toList();
   }
 }

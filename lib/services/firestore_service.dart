@@ -5,9 +5,86 @@ import '../models/outfit_plan.dart';
 import '../models/saved_outfit.dart';
 import '../models/style_chat_session.dart';
 import '../models/wardrobe_gap_analysis_result.dart';
+import '../models/shopping_list_item.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  CollectionReference<Map<String, dynamic>> get _shoppingListCollection {
+    return FirebaseFirestore.instance.collection('shopping_list');
+  }
+
+  Future<void> addShoppingListItem(ShoppingListItem item) async {
+    await _shoppingListCollection.add(item.toMap());
+  }
+
+  Future<bool> isShoppingItemAlreadyAdded({
+    required String uid,
+    required String title,
+    required String category,
+    required String suggestedColor,
+  }) async {
+    final snapshot = await _shoppingListCollection
+        .where('uid', isEqualTo: uid)
+        .get();
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+
+      final existingTitle =
+          data['title']?.toString().trim().toLowerCase() ?? '';
+
+      final existingCategory =
+          data['category']?.toString().trim().toLowerCase() ?? '';
+
+      final existingColor =
+          data['suggestedColor']?.toString().trim().toLowerCase() ?? '';
+
+      if (existingTitle == title.trim().toLowerCase() &&
+          existingCategory == category.trim().toLowerCase() &&
+          existingColor == suggestedColor.trim().toLowerCase()) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  Stream<List<ShoppingListItem>> getShoppingListItems(String uid) {
+    return _shoppingListCollection.where('uid', isEqualTo: uid).snapshots().map(
+      (snapshot) {
+        final items = snapshot.docs.map((doc) {
+          return ShoppingListItem.fromMap(doc.data(), doc.id);
+        }).toList();
+
+        items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+        return items;
+      },
+    );
+  }
+
+  Future<void> removeShoppingListItem(String itemId) async {
+    if (itemId.trim().isEmpty) {
+      return;
+    }
+
+    await _shoppingListCollection.doc(itemId).delete();
+  }
+
+  Future<void> markShoppingItemCompleted({
+    required String itemId,
+    required bool completed,
+  }) async {
+    if (itemId.trim().isEmpty) {
+      return;
+    }
+
+    await _shoppingListCollection.doc(itemId).update({
+      'completed': completed,
+      'updatedAt': Timestamp.now(),
+    });
+  }
 
   // Kullanıcıyı Kaydet
   Future<void> saveUser({

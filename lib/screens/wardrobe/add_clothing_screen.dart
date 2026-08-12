@@ -15,7 +15,15 @@ import '../../widgets/clothing_analysis_card.dart';
 class AddClothingScreen extends StatefulWidget {
   final ClothingItem? clothing;
 
-  const AddClothingScreen({super.key, this.clothing});
+  final String? initialCategory;
+  final String? initialColor;
+
+  const AddClothingScreen({
+    super.key,
+    this.clothing,
+    this.initialCategory,
+    this.initialColor,
+  });
 
   @override
   State<AddClothingScreen> createState() => _AddClothingScreenState();
@@ -46,6 +54,67 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
 
   bool get isEditMode => widget.clothing != null;
 
+  String? _normalizeInitialCategory(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+
+    const validCategories = {
+      "Pantolon",
+      "Tişört",
+      "Gömlek",
+      "Kazak",
+      "Sweatshirt",
+      "Ceket",
+      "Mont",
+      "Şort",
+      "Etek",
+      "Elbise",
+      "Ayakkabı",
+    };
+
+    final normalized = value.trim();
+
+    return validCategories.contains(normalized) ? normalized : null;
+  }
+
+  String? _normalizeInitialColor(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+
+    const validColors = {
+      "Siyah",
+      "Beyaz",
+      "Krem",
+      "Bej",
+      "Gri",
+      "Mavi",
+      "Lacivert",
+      "Yeşil",
+      "Kırmızı",
+      "Pembe",
+      "Mor",
+      "Sarı",
+      "Kahverengi",
+      "Turuncu",
+    };
+
+    final text = value.trim();
+
+    if (validColors.contains(text)) {
+      return text;
+    }
+
+    for (final color in validColors) {
+      if (text.toLowerCase().contains(color.toLowerCase())) {
+        return color;
+      }
+    }
+
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +128,10 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
 
       brandController.text = widget.clothing!.brand ?? "";
       notesController.text = widget.clothing!.notes ?? "";
+    } else {
+      selectedCategory = _normalizeInitialCategory(widget.initialCategory);
+
+      selectedColor = _normalizeInitialColor(widget.initialColor);
     }
   }
 
@@ -454,7 +527,7 @@ class _AddClothingScreenState extends State<AddClothingScreen> {
           ),
         );
 
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
 

@@ -4,26 +4,48 @@ import '../../models/wardrobe_analysis.dart';
 import '../../models/clothing_item.dart';
 import '../../models/wardrobe_gap_analysis_result.dart';
 import '../../models/donation_candidate.dart';
+import '../../models/shopping_suggestion.dart';
+import '../../models/wardrobe_memory.dart';
+import '../../models/shopping_list_item.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/donation_candidate_service.dart';
+import '../../services/gemini_service.dart';
+import '../../services/wardrobe_memory_service.dart';
 
-class WardrobeAnalysisScreen extends StatelessWidget {
+class WardrobeAnalysisScreen extends StatefulWidget {
   final WardrobeAnalysis analysis;
   final WardrobeGapAnalysisResult? aiAnalysis;
   final List<ClothingItem> clothes;
 
-  WardrobeAnalysisScreen({
+  const WardrobeAnalysisScreen({
     super.key,
     required this.analysis,
     required this.aiAnalysis,
     required this.clothes,
   });
 
+  @override
+  State<WardrobeAnalysisScreen> createState() => _WardrobeAnalysisScreenState();
+}
+
+class _WardrobeAnalysisScreenState extends State<WardrobeAnalysisScreen> {
   final DonationCandidateService _donationCandidateService =
       DonationCandidateService();
+
   final FirestoreService _firestoreService = FirestoreService();
+  final Set<String> _addedShoppingSuggestionKeys = {};
+
+  final GeminiService _geminiService = GeminiService();
+
+  final WardrobeMemoryService _wardrobeMemoryService = WardrobeMemoryService();
+
+  List<ShoppingSuggestion> _shoppingSuggestions = [];
+
+  bool _isShoppingSuggestionsLoading = false;
+  bool _hasLoadedExistingShoppingItems = false;
+  bool _hasGeneratedShoppingSuggestions = false;
 
   Color _scoreColor(int score) {
     if (score >= 85) return Colors.green;
@@ -32,12 +54,243 @@ class WardrobeAnalysisScreen extends StatelessWidget {
     return Colors.red;
   }
 
+  String _scoreLabel(int score) {
+    if (score >= 85) {
+      return "Çok iyi";
+    }
+
+    if (score >= 70) {
+      return "İyi";
+    }
+
+    if (score >= 50) {
+      return "Geliştirilebilir";
+    }
+
+    return "Dengesiz";
+  }
+
+  Future<void> _generateShoppingSuggestions() async {
+    if (_isShoppingSuggestionsLoading) {
+      return;
+    }
+
+    if (widget.clothes.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isShoppingSuggestionsLoading = true;
+    });
+
+    try {
+      final user = AuthService().currentUser;
+
+      if (user == null) {
+        return;
+      }
+
+      final wardrobeMemory = _wardrobeMemoryService.buildMemory(
+        uid: user.uid,
+        clothes: widget.clothes,
+      );
+
+      final suggestions = await _geminiService.generateShoppingSuggestions(
+        clothes: widget.clothes,
+        wardrobeMemory: wardrobeMemory,
+        gapAnalysis: widget.aiAnalysis,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _shoppingSuggestions = suggestions;
+        _hasGeneratedShoppingSuggestions = true;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text("Alışveriş önerileri oluşturulamadı."),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isShoppingSuggestionsLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _addSuggestionToShoppingList(
+    ShoppingSuggestion suggestion,
+  ) async {
+    final user = AuthService().currentUser;
+
+    if (user == null) {
+      return;
+    }
+
+    final alreadyAdded = await _firestoreService.isShoppingItemAlreadyAdded(
+      uid: user.uid,
+      title: suggestion.title,
+      category: suggestion.category,
+      suggestedColor: suggestion.suggestedColor,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (alreadyAdded) {
+      setState(() {
+        _addedShoppingSuggestionKeys.add(_shoppingSuggestionKey(suggestion));
+      });
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text("Bu öneri zaten alışveriş listende."),
+          ),
+        );
+
+      return;
+    }
+
+    final now = DateTime.now();
+
+    final item = ShoppingListItem(
+      id: '',
+      uid: user.uid,
+      title: suggestion.title,
+      category: suggestion.category,
+      suggestedColor: suggestion.suggestedColor,
+      reason: suggestion.reason,
+      priority: suggestion.priority,
+      completed: false,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    try {
+      await _firestoreService.addShoppingListItem(item);
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _addedShoppingSuggestionKeys.add(_shoppingSuggestionKey(suggestion));
+      });
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text("${suggestion.title} alışveriş listesine eklendi."),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text("Ürün alışveriş listesine eklenemedi."),
+          ),
+        );
+    }
+  }
+
+  int _calculateCombinedWardrobeScore() {
+    int score = widget.analysis.wardrobeScore;
+
+    final aiAnalysis = widget.aiAnalysis;
+
+    if (aiAnalysis == null) {
+      return score.clamp(0, 100);
+    }
+
+    score -= aiAnalysis.missingCategories.length * 6;
+    score -= aiAnalysis.missingColors.length * 2;
+    score -= aiAnalysis.overrepresentedItems.length * 3;
+
+    return score.clamp(0, 100);
+  }
+
+  String _shoppingSuggestionKey(ShoppingSuggestion suggestion) {
+    return [
+      suggestion.title.trim().toLowerCase(),
+      suggestion.category.trim().toLowerCase(),
+      suggestion.suggestedColor.trim().toLowerCase(),
+    ].join('|');
+  }
+
+  Future<void> _loadExistingShoppingItems() async {
+    if (_hasLoadedExistingShoppingItems) {
+      return;
+    }
+
+    final user = AuthService().currentUser;
+
+    if (user == null) {
+      return;
+    }
+
+    _hasLoadedExistingShoppingItems = true;
+
+    try {
+      final items = await _firestoreService
+          .getShoppingListItems(user.uid)
+          .first;
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        for (final item in items) {
+          final key = [
+            item.title.trim().toLowerCase(),
+            item.category.trim().toLowerCase(),
+            item.suggestedColor.trim().toLowerCase(),
+          ].join('|');
+
+          _addedShoppingSuggestionKeys.add(key);
+        }
+      });
+    } catch (e) {
+      debugPrint("Mevcut alışveriş listesi okunamadı: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scoreColor = _scoreColor(analysis.wardrobeScore);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadExistingShoppingItems();
+    });
+
+    final combinedScore = _calculateCombinedWardrobeScore();
+
+    final scoreColor = _scoreColor(combinedScore);
 
     final List<DonationCandidate> donationCandidates = _donationCandidateService
-        .findCandidates(clothes);
+        .findCandidates(widget.clothes);
 
     return Scaffold(
       appBar: AppBar(
@@ -50,7 +303,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildScoreCard(context, scoreColor),
+              _buildScoreCard(context, scoreColor, combinedScore),
 
               const SizedBox(height: 18),
 
@@ -74,7 +327,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                 context: context,
                 title: "Kategori Dağılımı",
                 icon: Icons.category_outlined,
-                distribution: analysis.categoryDistribution,
+                distribution: widget.analysis.categoryDistribution,
               ),
 
               const SizedBox(height: 18),
@@ -83,7 +336,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                 context: context,
                 title: "Renk Dağılımı",
                 icon: Icons.palette_outlined,
-                distribution: analysis.colorDistribution,
+                distribution: widget.analysis.colorDistribution,
               ),
 
               const SizedBox(height: 18),
@@ -92,7 +345,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                 context: context,
                 title: "Mevsim Dağılımı",
                 icon: Icons.wb_sunny_outlined,
-                distribution: analysis.seasonDistribution,
+                distribution: widget.analysis.seasonDistribution,
               ),
 
               const SizedBox(height: 18),
@@ -101,7 +354,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                 context: context,
                 title: "Güçlü Yönler",
                 icon: Icons.check_circle_outline_rounded,
-                items: analysis.strengths,
+                items: widget.analysis.strengths,
                 emptyText: "Henüz güçlü yön belirlenemedi.",
               ),
 
@@ -111,7 +364,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                 context: context,
                 title: "Dikkat Edilmesi Gerekenler",
                 icon: Icons.warning_amber_rounded,
-                items: analysis.warnings,
+                items: widget.analysis.warnings,
                 emptyText: "Belirgin bir uyarı bulunmuyor.",
               ),
 
@@ -121,7 +374,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                 context: context,
                 title: "Öneriler",
                 icon: Icons.lightbulb_outline_rounded,
-                items: analysis.recommendations,
+                items: widget.analysis.recommendations,
                 emptyText: "Şu anda ek bir öneri bulunmuyor.",
               ),
               const SizedBox(height: 18),
@@ -131,10 +384,10 @@ class WardrobeAnalysisScreen extends StatelessWidget {
 
               _buildDonationCandidatesSection(context, donationCandidates),
 
-              if (aiAnalysis != null) ...[
+              if (widget.aiAnalysis != null) ...[
                 const SizedBox(height: 18),
 
-                _buildAiSummaryCard(context, aiAnalysis!),
+                _buildAiSummaryCard(context, widget.aiAnalysis!),
 
                 const SizedBox(height: 18),
 
@@ -142,7 +395,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                   context: context,
                   title: "AI Güçlü Yönler",
                   icon: Icons.auto_awesome_rounded,
-                  items: aiAnalysis!.strengths,
+                  items: widget.aiAnalysis!.strengths,
                   emptyText: "AI tarafından ek güçlü yön bulunamadı.",
                 ),
 
@@ -152,7 +405,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                   context: context,
                   title: "Eksik Kategoriler",
                   icon: Icons.category_outlined,
-                  items: aiAnalysis!.missingCategories,
+                  items: widget.aiAnalysis!.missingCategories,
                   emptyText: "Belirgin bir kategori eksiği bulunmuyor.",
                 ),
 
@@ -162,7 +415,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                   context: context,
                   title: "Eksik Renkler",
                   icon: Icons.palette_outlined,
-                  items: aiAnalysis!.missingColors,
+                  items: widget.aiAnalysis!.missingColors,
                   emptyText: "Belirgin bir renk eksiği bulunmuyor.",
                 ),
 
@@ -172,7 +425,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                   context: context,
                   title: "Fazla Tekrar Edenler",
                   icon: Icons.repeat_rounded,
-                  items: aiAnalysis!.overrepresentedItems,
+                  items: widget.aiAnalysis!.overrepresentedItems,
                   emptyText: "Fazla tekrar eden bir parça grubu bulunmuyor.",
                 ),
 
@@ -182,9 +435,12 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                   context: context,
                   title: "AI Önerileri",
                   icon: Icons.lightbulb_outline_rounded,
-                  items: aiAnalysis!.recommendations,
+                  items: widget.aiAnalysis!.recommendations,
                   emptyText: "AI tarafından ek öneri bulunmuyor.",
                 ),
+                const SizedBox(height: 18),
+
+                _buildSmartShoppingSection(context),
               ],
             ],
           ),
@@ -193,7 +449,11 @@ class WardrobeAnalysisScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildScoreCard(BuildContext context, Color scoreColor) {
+  Widget _buildScoreCard(
+    BuildContext context,
+    Color scoreColor,
+    int combinedScore,
+  ) {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -246,7 +506,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    "${analysis.wardrobeScore}",
+                    "$combinedScore",
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 42,
@@ -263,7 +523,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            analysis.scoreLabel,
+            _scoreLabel(combinedScore),
             style: TextStyle(
               color: scoreColor,
               fontSize: 19,
@@ -281,18 +541,288 @@ class WardrobeAnalysisScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildSmartShoppingSection(BuildContext context) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.shopping_bag_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    "Akıllı Alışveriş",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              "Gardırobundaki gerçek eksikleri analiz eder ve "
+              "gereksiz alışverişten kaçınmaya çalışır.",
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            if (_shoppingSuggestions.isEmpty &&
+                !_isShoppingSuggestionsLoading &&
+                !_hasGeneratedShoppingSuggestions)
+              SizedBox(
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: _generateShoppingSuggestions,
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: const Text(
+                    "Gardırobumdaki Eksikleri Analiz Et",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+
+            if (_hasGeneratedShoppingSuggestions &&
+                _shoppingSuggestions.isEmpty &&
+                !_isShoppingSuggestionsLoading) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primaryContainer.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Gardırobunda şu anda belirgin bir eksik görünmüyor. "
+                        "Yeni ürün almak yerine mevcut parçalarını farklı kombinlerde değerlendirebilirsin.",
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              OutlinedButton.icon(
+                onPressed: _generateShoppingSuggestions,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text("Tekrar Analiz Et"),
+              ),
+            ],
+
+            if (_isShoppingSuggestionsLoading) ...[
+              const SizedBox(height: 6),
+              const Center(
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text("Gardırop analiz ediliyor..."),
+                  ],
+                ),
+              ),
+            ],
+
+            if (_shoppingSuggestions.isNotEmpty) ...[
+              ..._shoppingSuggestions.map((suggestion) {
+                final suggestionKey = _shoppingSuggestionKey(suggestion);
+
+                final isAdded = _addedShoppingSuggestionKeys.contains(
+                  suggestionKey,
+                );
+
+                String priorityText;
+
+                switch (suggestion.priority.toLowerCase().trim()) {
+                  case "high":
+                    priorityText = "Yüksek";
+                    break;
+                  case "medium":
+                    priorityText = "Orta";
+                    break;
+                  default:
+                    priorityText = "Düşük";
+                }
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              suggestion.title,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              priorityText,
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Text(
+                        suggestion.reason,
+                        style: const TextStyle(fontSize: 13, height: 1.4),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (suggestion.category.trim().isNotEmpty)
+                            Chip(
+                              avatar: const Icon(
+                                Icons.category_outlined,
+                                size: 17,
+                              ),
+                              label: Text(suggestion.category),
+                            ),
+
+                          if (suggestion.suggestedColor.trim().isNotEmpty)
+                            Chip(
+                              avatar: const Icon(
+                                Icons.palette_outlined,
+                                size: 17,
+                              ),
+                              label: Text(suggestion.suggestedColor),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: OutlinedButton.icon(
+                          onPressed: isAdded
+                              ? null
+                              : () {
+                                  _addSuggestionToShoppingList(suggestion);
+                                },
+                          icon: Icon(
+                            isAdded
+                                ? Icons.check_circle_rounded
+                                : Icons.playlist_add_rounded,
+                          ),
+                          label: Text(
+                            isAdded
+                                ? "Alışveriş Listesinde"
+                                : "Alışveriş Listesine Ekle",
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+              const SizedBox(height: 6),
+
+              OutlinedButton.icon(
+                onPressed: _isShoppingSuggestionsLoading
+                    ? null
+                    : _generateShoppingSuggestions,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text("Önerileri Yenile"),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatisticsGrid(BuildContext context) {
     final items = [
-      ("Toplam", "${analysis.totalClothes}", Icons.checkroom_outlined),
-      ("Favoriler", "${analysis.favoriteCount}", Icons.star_outline_rounded),
+      ("Toplam", "${widget.analysis.totalClothes}", Icons.checkroom_outlined),
+      (
+        "Favoriler",
+        "${widget.analysis.favoriteCount}",
+        Icons.star_outline_rounded,
+      ),
       (
         "Kullanılmamış",
-        "${analysis.unusedClothesCount}",
+        "${widget.analysis.unusedClothesCount}",
         Icons.history_toggle_off_rounded,
       ),
-      ("En Sık Renk", analysis.mostCommonColor, Icons.palette_outlined),
-      ("En Sık Kategori", analysis.mostCommonCategory, Icons.category_outlined),
-      ("En Sık Mevsim", analysis.mostCommonSeason, Icons.wb_sunny_outlined),
+      ("En Sık Renk", widget.analysis.mostCommonColor, Icons.palette_outlined),
+      (
+        "En Sık Kategori",
+        widget.analysis.mostCommonCategory,
+        Icons.category_outlined,
+      ),
+      (
+        "En Sık Mevsim",
+        widget.analysis.mostCommonSeason,
+        Icons.wb_sunny_outlined,
+      ),
     ];
 
     return GridView.builder(
@@ -350,7 +880,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
   }
 
   Widget _buildUsageMemorySection(BuildContext context) {
-    final frequentlyUsed = List<ClothingItem>.from(clothes)
+    final frequentlyUsed = List<ClothingItem>.from(widget.clothes)
       ..sort((a, b) => b.timesUsed.compareTo(a.timesUsed));
 
     final visibleItems = frequentlyUsed
@@ -406,7 +936,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
   }
 
   Widget _buildFavoritesSection(BuildContext context) {
-    final favoriteClothes = clothes
+    final favoriteClothes = widget.clothes
         .where((item) => item.favorite)
         .take(6)
         .toList();
@@ -429,7 +959,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  "${analysis.favoriteCount}",
+                  "${widget.analysis.favoriteCount}",
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.bold,
@@ -463,7 +993,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
   }
 
   Widget _buildUnusedSection(BuildContext context) {
-    final unusedClothes = clothes
+    final unusedClothes = widget.clothes
         .where((item) => item.timesUsed == 0)
         .take(8)
         .toList();
@@ -489,7 +1019,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  "${analysis.unusedClothesCount}",
+                  "${widget.analysis.unusedClothesCount}",
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.bold,
@@ -677,7 +1207,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
     final now = DateTime.now();
 
     final longUnusedClothes =
-        clothes.where((item) {
+        widget.clothes.where((item) {
           final lastWornAt = item.lastWornAt;
 
           if (lastWornAt == null) {
@@ -804,7 +1334,7 @@ class WardrobeAnalysisScreen extends StatelessWidget {
     BuildContext context,
     List<DonationCandidate> candidates,
   ) {
-    final clothesById = {for (final item in clothes) item.id: item};
+    final clothesById = {for (final item in widget.clothes) item.id: item};
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

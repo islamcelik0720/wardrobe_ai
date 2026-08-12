@@ -661,13 +661,18 @@ class _HomeScreenState extends State<HomeScreen> {
     List<ClothingItem> clothes,
     String uid,
   ) {
+    final combinedScore = _calculateCombinedWardrobeScore(
+      analysis,
+      _gapAnalysisResult,
+    );
+
     final Color scoreColor;
 
-    if (analysis.wardrobeScore >= 85) {
+    if (combinedScore >= 85) {
       scoreColor = Colors.green;
-    } else if (analysis.wardrobeScore >= 70) {
+    } else if (combinedScore >= 70) {
       scoreColor = Colors.blue;
-    } else if (analysis.wardrobeScore >= 50) {
+    } else if (combinedScore >= 50) {
       scoreColor = Colors.orange;
     } else {
       scoreColor = Colors.red;
@@ -736,7 +741,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        "${analysis.wardrobeScore}",
+                        "${combinedScore}",
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 26,
@@ -1237,6 +1242,23 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     return currentSignature != result.wardrobeSignature;
+  }
+
+  int _calculateCombinedWardrobeScore(
+    WardrobeAnalysis analysis,
+    WardrobeGapAnalysisResult? aiAnalysis,
+  ) {
+    int score = analysis.wardrobeScore;
+
+    if (aiAnalysis == null) {
+      return score.clamp(0, 100);
+    }
+
+    score -= aiAnalysis.missingCategories.length * 6;
+    score -= aiAnalysis.missingColors.length * 2;
+    score -= aiAnalysis.overrepresentedItems.length * 3;
+
+    return score.clamp(0, 100);
   }
 
   @override

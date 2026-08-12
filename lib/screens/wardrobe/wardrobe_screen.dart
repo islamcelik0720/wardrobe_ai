@@ -5,6 +5,7 @@ import '../outfits/saved_outfits_screen.dart';
 import 'clothing_detail_screen.dart';
 
 import '../../models/clothing_item.dart';
+import '../analysis/shopping_list_screen.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
@@ -317,6 +318,17 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
         title: const Text("Gardırobum"),
         centerTitle: true,
         actions: [
+          IconButton(
+            tooltip: "Alışveriş Listem",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ShoppingListScreen()),
+              );
+            },
+            icon: const Icon(Icons.shopping_bag_outlined),
+          ),
+
           IconButton(
             tooltip: "Bağış Listem",
             onPressed: () {
